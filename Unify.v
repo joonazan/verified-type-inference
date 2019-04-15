@@ -1,5 +1,5 @@
 Require Import String Arith.
-Require Import Program.
+Require Import Program Omega List ListSet.
 
 Definition name := string.
 Definition tvarname := nat.
@@ -40,6 +40,7 @@ intros. induction x.
 - unfold apply. unfold apply in IHx1. unfold apply in IHx2.
   rewrite IHx1. rewrite IHx2. reflexivity.
 Qed.
+Hint Resolve identity_does_nothing.
 
 Theorem sole_sub_works : forall a t, apply (sole_sub a t) (TVar a) = t.
 Proof.
@@ -67,6 +68,8 @@ Inductive Contains : Tipe -> Tipe -> Prop :=
   Here : forall t, Contains t t
 | InLeft : forall a t t2, Contains a t -> Contains a (TApp t t2)
 | InRight : forall a t t2, Contains a t -> Contains a (TApp t2 t).
+
+Hint Constructors Contains.
 
 Definition contains_dec t t2 : { Contains t t2 } + { ~ Contains t t2 }.
 destruct (eq_dec t t2).
@@ -184,8 +187,16 @@ intros. induction H.
   intro. apply eq_sym in H2. apply bad_recursion_right in H2. assumption.
 Qed.
 
+Definition unifying_subst s source :=
+  ((forall x, apply s x = x) \/ exists a, Contains (TVar a) source /\ forall x, ~ Contains (TVar a) (apply s x))
+  /\ forall a x, Contains (TVar a) (apply s x) -> (Contains (TVar a) source \/ Contains (TVar a) x).
+
+Definition less_vars a b :=
+  (exists x, ~ Contains (TVar x) a /\ Contains (TVar x) b)
+  /\ forall v, Contains (TVar v) a -> Contains (TVar v) b.
+
 Definition bind (a : nat) (t : Tipe) :
-  { s | unifies s (TVar a) t /\ isMGU s (TVar a) t } + { forall s, ~ unifies s (TVar a) t }.
+  { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (TApp (TVar a) t) } + { forall s, ~ unifies s (TVar a) t }.
 refine (
   if contains_dec (TVar a) t then
     _
@@ -194,15 +205,18 @@ refine (
 ).
 - pose proof (occurs_check _ _ c). destruct t.
   * left. exists identity. dependent destruction c. 
-    split. easy.
+    split. easy. split.
     unfold isMGU. intros. exists s'. intro. rewrite identity_does_nothing.
     reflexivity.
+    unfold unifying_subst. split.
+    left. apply identity_does_nothing.
+    intros. right. rewrite identity_does_nothing in H0.  assumption.
   * right. dependent destruction c.
   * right. destruct H. congruence. assumption.
 
 - exists (sole_sub a t).
   assert (TVar a <> t). intro. rewrite H in n. exact (n (Here t)).
-  split.
+  split; [idtac | split].
   * unfold unifies. rewrite sole_sub_works. rewrite sole_sub_does_nothing.
     reflexivity. assumption.
   * unfold isMGU. unfold unifies. intros. exists s'. intro.
@@ -215,132 +229,254 @@ refine (
     + repeat rewrite apply_goes_into_tapp.
       rewrite <- IHt0_1. rewrite <- IHt0_2.
       reflexivity.
+  * unfold unifying_subst. split.
+    right. exists a. split.
+    auto.
+    intro. induction x.
+    + pose (Nat.eq_dec a t0). destruct s.
+      rewrite <- e. rewrite sole_sub_works. assumption.
+      rewrite sole_sub_does_nothing.
+      all: (intro; dependent destruction H0; contradiction).
+    + now compute.
+    + rewrite apply_goes_into_tapp. intro. dependent destruction H0.
+      contradiction. contradiction.
+  + intros. induction x.
+    pose (Nat.eq_dec a0 t0). destruct s.
+    rewrite e. auto.
+    left. pose (Nat.eq_dec a t0). destruct s.
+    destruct e. rewrite sole_sub_works in H0. auto.
+    rewrite sole_sub_does_nothing in H0. dependent destruction H0. contradiction.
+    intro. dependent destruction H1. contradiction.
+    compute in H0. dependent destruction H0.
+    rewrite apply_goes_into_tapp in H0. dependent destruction H0.
+    apply IHx1 in H0. destruct H0. auto. auto.
+    apply IHx2 in H0. destruct H0. auto. auto.
 Defined.
 
-Definition reverse_bind : forall a t,
-   { s | unifies s (TVar a) t /\ isMGU s (TVar a) t } + { forall s, ~ unifies s (TVar a) t }
--> { s | unifies s t (TVar a) /\ isMGU s t (TVar a) } + { forall s, ~ unifies s t (TVar a) }.
+Definition reverse_bind : forall a b t,
+   { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (TApp (TVar a) b) } + { forall s, ~ unifies s (TVar a) t }
+-> { s | unifies s t (TVar a) /\ isMGU s t (TVar a) /\ unifying_subst s (TApp b (TVar a)) } + { forall s, ~ unifies s t (TVar a) }.
 Proof.
 intros. destruct H.
-- left. destruct s. destruct a0. exists x. split. easy.
+- left. destruct s. destruct a0. destruct H0. exists x. split. easy. split.
   unfold isMGU. intros. unfold isMGU in H0. specialize H0 with s'. destruct H0.
   unfold unifies. unfold unifies in H1. apply eq_sym. assumption.
   exists x0. assumption.
+  destruct H1. unfold unifying_subst. split. destruct H1. auto.
+  destruct H1. destruct H1. right. exists x0. split. dependent destruction H1. auto. auto.
+  assumption. intros. apply H2 in H3. destruct H3. left. dependent destruction H3. auto. auto. auto.
 - right. intro. intro. unfold unifies in H. apply eq_sym in H. apply n in H. assumption.
 Defined.
 
-Inductive less_tvars_or_size : Tipe -> Tipe -> Prop :=
-  less_tvars : forall a b, (exists x, ~ Contains (TVar x) a /\ Contains (TVar x) b) -> less_tvars_or_size a b
-| less_size : forall a b, (forall x, Contains (TVar x) a -> Contains (TVar x) a) -> size a < size b -> less_tvars_or_size a b.
+Definition le_n_vars n t :=
+  exists vars, List.length vars = n /\ (forall a, Contains (TVar a) t -> set_In a vars).
 
-Program Fixpoint unify (a : Tipe) (b : Tipe) {measure a (less_tvars_or_size)} :
-  { s | unifies s a b /\ isMGU s a b } + { forall s, ~ unifies s a b } :=
+Lemma removing_shortens : forall n a s,
+  set_In a s -> List.length s = S n -> List.length (set_remove Nat.eq_dec a s) = n.
+fix rec 1. intros.
+destruct s. easy.
+pose (Nat.eq_dec n0 a). destruct s0.
+  rewrite e. simpl. destruct Nat.eq_dec. auto. easy.
+  simpl. destruct Nat.eq_dec. auto. simpl. destruct n.
+    destruct H. easy.
+    simpl in H0. destruct s. destruct H. simpl in H0. easy.
+  apply eq_S. destruct H. easy. apply rec. assumption.
+    simpl in H0. auto.
+Defined.
+
+Inductive less_tvars_or_size : nat * Tipe -> nat * Tipe -> Prop :=
+| less_tvars : forall n a a', less_tvars_or_size (n, a) (S n, a')
+| less_size_l : forall n a b, less_tvars_or_size (n, a) (n, TApp a b)
+| less_size_r : forall n a b, less_tvars_or_size (n, a) (n, TApp b a).
+
+Program Fixpoint unify (n : nat) (a : Tipe) (b : Tipe) (nvars : le_n_vars n (TApp a b)) {measure (n, a) (less_tvars_or_size) } :
+  { s | unifies s a b /\ isMGU s a b /\ unifying_subst s (TApp a b) } + { forall s, ~ unifies s a b } :=
+
 match a, b with
   TConst x, TConst y => if string_dec x y then inleft identity else inright _
 | TApp a1 a2, TApp b1 b2 =>
-  match unify a1 b1 with
-    inleft (exist _ s1 p1) => match unify (apply s1 a2) (apply s1 b2) with
-      inleft (exist _ s2 p2) => inleft (sequence s2 s1)
-    | inright fail => inright _
-    end
+  match unify n a1 b1 _ with
+    inleft (exist _ s1 p1) =>
+      if eq_dec a1 b1 then
+        match unify n a2 b2 _ with
+        | inleft (exist _ s p) => inleft s
+        | inright fail => inright _
+        end
+      else
+        match unify (n - 1) (apply s1 a2) (apply s1 b2) _ with
+          inleft (exist _ s2 p2) => inleft (sequence s2 s1)
+        | inright fail => inright _
+        end
   | inright fail => inright _
   end
 | TVar a, t => bind a t
-| t, TVar a => reverse_bind _ _ (bind a t)
+| t, TVar a => reverse_bind _ _ _ (bind a t)
 | not, equal => inright _
 end.
 
 Next Obligation.
-split;
-[ compute; reflexivity
-| unfold isMGU; intros; exists s'; intro;
-  rewrite identity_does_nothing; reflexivity
-].
+split; [compute; reflexivity | split].
+unfold isMGU; intros; exists s'; intro;
+  rewrite identity_does_nothing; reflexivity.
+unfold unifying_subst. split. auto.
+intros. right. rewrite identity_does_nothing in H. assumption.
 Qed.
 
 Next Obligation.
 compute; intro; injection H0; assumption.
 Qed.
 
+Ltac dd :=
+match goal with
+| [H : _ |- _] => dependent destruction H; [auto | auto]
+end.
+
 Next Obligation.
-apply less_size; [easy | apply contained_is_smaller ].
-- apply InLeft. apply Here.
-- apply bad_recursion_left.
+destruct nvars.
+destruct H.
+unfold le_n_vars.
+exists x. split. assumption.
+intros. dd.
 Qed.
 
-Lemma substitution_removes_tvars : forall s x,
-  apply s x = x \/ exists a, ~ Contains (TVar a) (apply s x) /\ Contains (TVar a) x.
-intros. .
+Next Obligation.
+apply less_size_l.
+Qed.
 
 Next Obligation.
+destruct nvars. destruct a. exists x. split. assumption.
+  intros. apply s. dd.
+Qed.
 
+Next Obligation.
+apply less_size_r.
+Qed.
 
-Fixpoint unify (a : Tipe) (b : Tipe) :
-  { s | unifies s a b /\ isMGU s a b } + { forall s, ~ unifies s a b }.
-refine (
-  match a, b with
-    TConst x, TConst y => if string_dec x y then inleft _ else inright _
-  | TApp a1 a2, TApp b1 b2 =>
-    match unify a1 b1 with
-      inleft (exist _ s1 p1) => match unify (apply s1 a2) (apply s1 b2) with
-        inleft (exist _ s2 p2) => inleft _
-      | inright fail => inright _
-      end
-    | inright fail => inright _
-    end
-  | TVar a, t => bind a t
-  | t, TVar a => reverse_bind _ _ (bind a t)
-  | not, equal => inright _
-  end
-).
+Next Obligation.
+unfold unifies. unfold unifies in u.
+intuition.
+- repeat rewrite apply_goes_into_tapp. rewrite u. reflexivity.
+- unfold isMGU. intros. unfold isMGU in i.
+  unfold unifies in H. repeat rewrite apply_goes_into_tapp in H. injection H. intros. apply i in H0.
+  destruct H0. exists x. assumption.
+- unfold unifying_subst. destruct u0. split. destruct o. left. assumption.
+  right. destruct e. destruct a. exists x. split. dd. assumption.
+  intros. apply o0 in H. destruct H. dd. auto.
+Qed.
 
-(* TConst *)
-- exists identity. split.
-  * compute. rewrite e. reflexivity.
-  * unfold isMGU. intros. exists s'. intros.
-    pose proof identity_does_nothing. rewrite H0. reflexivity.
-- compute. intro. intro. injection H. assumption.
+Next Obligation.
+unfold unifies. repeat rewrite apply_goes_into_tapp. intro. injection H. intro.
+apply fail in H0. assumption.
+Qed.
 
-(* mismatch *)
-- intuition.
-  unfold unifies in H. unfold apply in H. congruence.
-- intuition. unfold unifies in H. simpl in H. congruence.
+Next Obligation.
+destruct u0. destruct o. unfold unifies in u. pose proof u. repeat rewrite e in H0. contradiction.
+destruct n. destruct nvars. destruct a. destruct x. destruct e. destruct a.
+  exfalso. pose proof (s x). apply H0. dd.
+  easy.
+simpl. rewrite <- minus_n_O.
+unfold le_n_vars. destruct e. destruct a. destruct nvars.
+exists (set_remove Nat.eq_dec x x0). destruct a. split. apply removing_shortens.
+  apply s. dd.
+  assumption.
+intros. pose (Nat.eq_dec a x). rewrite <- apply_goes_into_tapp in H0. destruct s0.
+  rewrite e0 in H0. apply n0 in H0. easy.
+  apply set_remove_3. apply s. apply o0 in H0. destruct H0. dd. dd. assumption.
+Qed.
 
-(* TApp *)
-- exists (sequence s2 s1).
-  pose proof sequence_application as unseq.
-  pose proof apply_goes_into_tapp as distribute.
-  split.
-  * unfold unifies.
-    assert (apply (sequence s2 s1) a1 = apply (sequence s2 s1) b1).
-    rewrite unseq. rewrite unseq.
-    destruct p1. unfold unifies in H. rewrite H.
-    reflexivity.
+Lemma subst_sequencing_variable_loss : forall s1 s2 a1 a2 b1 b2,
+  unifying_subst s1 (TApp a1 b1) -> unifying_subst s2 (TApp (apply s1 a2) (apply s1 b2))
+-> unifying_subst (sequence s2 s1) (TApp (TApp a1 a2) (TApp b1 b2)).
+Proof.
+intros. destruct H. destruct H0. unfold unifying_subst. split.
+destruct H; destruct H0.
+left. intro. rewrite sequence_application. rewrite H. easy.
+right. destruct H0. exists x. destruct H0. split.
+repeat rewrite H in H0. dd.
+intro. rewrite sequence_application. easy.
+right. destruct H. destruct H. exists x. split. dd.
+intro. rewrite sequence_application. rewrite H0. easy.
+right. destruct H0. destruct H0. exists x. split.
+dependent destruction H0.
+  apply H1 in H0; destruct H0;[dd | auto].
+  apply H1 in H0; destruct H0;[dd | auto].
+intro. rewrite sequence_application. easy.
 
-    assert (apply (sequence s2 s1) a2 = apply (sequence s2 s1) b2).
-    rewrite unseq. rewrite unseq.
-    destruct p2. unfold unifies in H1. assumption.
+intros. rewrite sequence_application in H3.
+pose (H2 _ _ H3). destruct o.
+dependent destruction H4.
+all: apply H1 in H4; destruct H4; [ dd | auto].
+Qed.
 
-    rewrite distribute. rewrite distribute.
-    rewrite H. rewrite H0.
-    reflexivity.
+Next Obligation.
+destruct n. destruct nvars. destruct x. destruct a.
+  destruct u0. destruct o. pose proof u. unfold unifies in H0. repeat rewrite e0 in H0. contradiction.
+  destruct e0. destruct a. exfalso. pose proof (s x). apply H0. dd.
+  destruct a; easy.
+simpl. rewrite <- minus_n_O. apply less_tvars.
+Qed.
 
-  * destruct p1. destruct p2. unfold isMGU. intros.
-    unfold isMGU in H0. unfold isMGU in H2.
-    unfold unifies in H3. repeat rewrite distribute in H3. injection H3.
-    intros.
-    unfold unifies in H0. apply H0 in H5. destruct H5.
-    repeat rewrite H5 in H4. unfold unifies in H2. apply H2 in H4.
-    destruct H4.
-    exists x0. intro. rewrite unseq. rewrite <- H4. rewrite <- H5.
-    reflexivity.
+Next Obligation.
+unfold unifies. unfold unifies in u. unfold unifies in u1.
+intuition.
+- repeat rewrite apply_goes_into_tapp. repeat rewrite sequence_application.
+  rewrite u1. rewrite u. reflexivity.
+- unfold isMGU. intros. unfold isMGU in i. unfold isMGU in i0.
+  unfold unifies in H0. repeat rewrite apply_goes_into_tapp in H0. injection H0. intros. apply i0 in H2.
+  destruct H2.
+  repeat rewrite H2 in H1. apply i in H1. destruct H1.
+  exists x0. intro. rewrite sequence_application. rewrite <- H1. rewrite H2. reflexivity.
+- apply subst_sequencing_variable_loss. assumption. assumption.
+Qed.
 
-- unfold not. intros. unfold unifies in H.
-  repeat rewrite apply_goes_into_tapp in H. injection H. intros.
-  destruct p1. unfold isMGU in H3. apply H3 in H1. destruct H1.
-  specialize fail with x. unfold unifies in fail. repeat rewrite <- H1 in fail.
-  contradiction.
+Next Obligation.
+intro. injection H0. intros. apply i in H2. destruct H2. repeat rewrite H2 in H1. apply fail in H1.
+assumption.
+Qed.
 
-- unfold not. intros. unfold unifies in H. injection H. intros.
-  apply fail in H1. assumption.
-Defined.
+Next Obligation.
+intro. unfold unifies in H. simpl in H. injection H. intros. apply fail in H1. assumption.
+Qed.
+
+(** failure case *)
+Next Obligation.
+intro. destruct a.
+refine (H0 _ _ _). easy.
+destruct b.
+  refine (H1 _ _ _). easy.
+  refine (H2 _ _ _). easy.
+  unfold unifies in H3. simpl in H3. congruence.
+destruct b.
+  now refine (H1 _ _ _).
+  compute in H3. congruence.
+  now refine (H _ _ _ _ _).
+Qed.
+
+Next Obligation.
+repeat split. all: easy.
+Qed.
+
+Next Obligation.
+repeat split. all: easy.
+Qed.
+
+Lemma less_tvars_or_size_wf : forall n x, Acc less_tvars_or_size (n, x).
+fix less_vars_rec 1.
+intros.
+destruct n.
+
+induction x.
+  apply Acc_intro. intros. dependent destruction H.
+  apply Acc_intro. intros. dependent destruction H.
+  apply Acc_intro. intros. dependent destruction H. assumption. assumption.
+
+induction x. all: apply Acc_intro; intros; dependent destruction H.
+  apply less_vars_rec. apply less_vars_rec. apply less_vars_rec.
+  assumption. assumption.
+Qed.
+
+Next Obligation.
+unfold well_founded. intros.
+pose proof less_tvars_or_size_wf. destruct a. destruct s. specialize H with x x0. destruct H.
+apply Acc_intro. intros. destruct y. destruct s0. specialize H with (x1, x2).
+Qed.
