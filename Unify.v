@@ -289,21 +289,21 @@ Inductive less_tvars_or_size : nat * Tipe -> nat * Tipe -> Prop :=
 | less_size_l : forall n a b, less_tvars_or_size (n, a) (n, TApp a b)
 | less_size_r : forall n a b, less_tvars_or_size (n, a) (n, TApp b a).
 
-Program Fixpoint unify (n : nat) (a : Tipe) (b : Tipe) (nvars : le_n_vars n (TApp a b)) {measure (n, a) (less_tvars_or_size) } :
+Program Fixpoint unify_impl (n : nat) (a : Tipe) (b : Tipe) (nvars : le_n_vars n (TApp a b)) {measure (n, a) (less_tvars_or_size) } :
   { s | unifies s a b /\ isMGU s a b /\ unifying_subst s (TApp a b) } + { forall s, ~ unifies s a b } :=
 
 match a, b with
   TConst x, TConst y => if string_dec x y then inleft identity else inright _
 | TApp a1 a2, TApp b1 b2 =>
-  match unify n a1 b1 _ with
+  match unify_impl n a1 b1 _ with
     inleft (exist _ s1 p1) =>
       if eq_dec a1 b1 then
-        match unify n a2 b2 _ with
+        match unify_impl n a2 b2 _ with
         | inleft (exist _ s p) => inleft s
         | inright fail => inright _
         end
       else
-        match unify (n - 1) (apply s1 a2) (apply s1 b2) _ with
+        match unify_impl (n - 1) (apply s1 a2) (apply s1 b2) _ with
           inleft (exist _ s2 p2) => inleft (sequence s2 s1)
         | inright fail => inright _
         end
@@ -478,3 +478,30 @@ Defined.
 Next Obligation.
 apply measure_wf. unfold well_founded. intros. destruct a. apply less_tvars_or_size_wf.
 Defined.
+
+Fixpoint list_vars x :=
+match x with
+| TVar a => [a]
+| TConst _ => []
+| TApp a b => set_union Nat.eq_dec (list_vars a) (list_vars b)
+end.
+
+Definition unify : forall a b, { s | unifies s a b /\ isMGU s a b } + { forall s, ~ unifies s a b }.
+intros.
+pose (unify_impl (length (list_vars (TApp a b))) a b). destruct s.
+
+exists (list_vars (TApp a b)).
+split. reflexivity.
+intros. induction (TApp a b).
+  compute. dependent destruction H. auto.
+  dependent destruction H.
+  simpl. dependent destruction H. apply set_union_intro1. auto. apply set_union_intro2. auto.
+
+left. destruct s. exists x. intuition.
+auto.
+Defined.
+
+Extraction Inline unify_impl unify_impl_func.
+
+(* TODO avoid actually calculating argument n. (By not having it as argument?) *)
+Extraction unify.
