@@ -473,10 +473,8 @@ induction x.
 induction x. all: apply Acc_intro; intros; dependent destruction H.
   apply less_vars_rec. apply less_vars_rec. apply less_vars_rec.
   assumption. assumption.
-Qed.
+Defined.
 
 Next Obligation.
-unfold well_founded. intros.
-pose proof less_tvars_or_size_wf. destruct a. destruct s. specialize H with x x0. destruct H.
-apply Acc_intro. intros. destruct y. destruct s0. specialize H with (x1, x2).
-Qed.
+apply measure_wf. unfold well_founded. intros. destruct a. apply less_tvars_or_size_wf.
+Defined.
