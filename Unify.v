@@ -1,5 +1,6 @@
 Require Import String Arith.
 Require Import Program Omega List ListSet.
+From Hammer Require Import Reconstr.
 
 Definition name := string.
 Definition tvarname := nat.
@@ -34,34 +35,25 @@ Definition isMGU s a b := forall s', unifies s' a b
 
 Theorem identity_does_nothing : forall x, apply identity x = x.
 Proof.
-intros. induction x.
-- easy.
-- easy.
-- unfold apply. unfold apply in IHx1. unfold apply in IHx2.
-  rewrite IHx1. rewrite IHx2. reflexivity.
+induction x; scrush.
 Qed.
 Hint Resolve identity_does_nothing.
 
 Theorem sole_sub_works : forall a t, apply (sole_sub a t) (TVar a) = t.
 Proof.
-intros. unfold apply. unfold sole_sub. destruct (Nat.eq_dec a a).
-- reflexivity.
-- contradiction.
+unfold sole_sub; scrush.
 Qed.
 
 Theorem sequence_application : forall x, forall u, forall v,
   apply (sequence v u) x = apply v (apply u x).
 Proof.
-intros.
-induction x. easy. easy.
-- unfold apply. unfold apply in IHx1. unfold apply in IHx2.
-  rewrite IHx1. rewrite IHx2. reflexivity.
+induction x; scrush.
 Qed.
 
 Theorem apply_goes_into_tapp : forall s, forall a, forall b,
   apply s (TApp a b) = TApp (apply s a) (apply s b).
 Proof.
-unfold apply. reflexivity.
+easy.
 Qed.
 
 Inductive Contains : Tipe -> Tipe -> Prop :=
@@ -75,47 +67,35 @@ Definition contains_dec t t2 : { Contains t t2 } + { ~ Contains t t2 }.
 destruct (eq_dec t t2).
 - left. rewrite e. apply Here.
 - induction t2.
-  * right. intro. dependent destruction H. congruence.
-  * right. intro. dependent destruction H. congruence.
+  * scrush.
+  * scrush.
   * destruct (eq_dec t t2_1).
-    + left. apply InLeft. rewrite e. apply Here.
-    + apply IHt2_1 in n0. destruct n0. left. apply InLeft. assumption.
-      destruct (eq_dec t t2_2). left. apply InRight. rewrite e. apply Here.
-      apply IHt2_2 in n1. destruct n1. left. apply InRight. assumption.
-      right. intro. dependent destruction H. contradiction. easy. easy.
+    + scrush.
+    + apply IHt2_1 in n0. destruct n0.
+        scrush.
+        destruct (eq_dec t t2_2); scrush.
 Defined.
 
 Theorem map_containment : forall s x t,
   Contains x t -> Contains (apply s x) (apply s t).
 Proof.
-intros. induction H.
-- apply Here.
-- rewrite apply_goes_into_tapp. apply InLeft. assumption.
-- rewrite apply_goes_into_tapp. apply InRight. assumption.
+intros. induction H; scrush.
 Qed.
 
 Theorem containment_transitive : forall a b c,
   Contains a b -> Contains b c -> Contains a c.
 Proof.
-intros. induction H0. assumption.
-apply InLeft. apply IHContains. assumption.
-apply InRight. apply IHContains. assumption.
+intros. induction H0; scrush.
 Qed.
 
 Theorem bad_recursion_left : forall a b, a <> TApp a b.
 Proof.
-intros. induction a.
-- easy.
-- easy.
-- intro. injection H. intros. rewrite H0 in H1. apply IHa1 in H1. assumption.
+induction a; scrush.
 Qed.
 
 Theorem bad_recursion_right : forall a b, b <> TApp a b.
 Proof.
-intros. induction b.
-- easy.
-- easy.
-- intro. injection H. intros. rewrite H1 in H0. apply IHb2 in H0. assumption.
+induction b; scrush.
 Qed.
 
 Fixpoint size x :=
@@ -129,43 +109,29 @@ Lemma size_is_nonzero : forall x, 0 < size x.
 induction x.
 - compute; easy.
 - compute; easy.
-- simpl. rewrite IHx1. apply Nat.lt_add_pos_r. assumption.
+- pose proof Nat.lt_add_pos_r. scrush.
 Qed.
 
 Lemma contained_is_smaller : forall a b, Contains a b -> a <> b -> size a < size b.
 intros.
+pose proof Nat.lt_add_pos_r. pose proof size_is_nonzero.
 dependent induction H.
 contradiction.
-destruct (eq_dec a t);
-  [ rewrite e; simpl; apply Nat.lt_add_pos_r; apply size_is_nonzero 
-  | apply IHContains in n; rewrite n; simpl; apply Nat.lt_add_pos_r; apply size_is_nonzero ].
-destruct (eq_dec a t);
-  [ rewrite e; simpl; apply Nat.lt_add_pos_l; apply size_is_nonzero 
-  | apply IHContains in n; rewrite n; simpl; apply Nat.lt_add_pos_l; apply size_is_nonzero ].
+destruct (eq_dec a t); scrush.
+destruct (eq_dec a t); pose proof Nat.lt_add_pos_l; scrush.
 Qed.
 
 Theorem impossible_loop {a b}
   (ainb : Contains a b) (bina : Contains b a) (anotb : a <> b) : False.
 pose proof contained_is_smaller.
-apply H in ainb.
-apply H in bina.
-rewrite ainb in bina; apply Nat.lt_irrefl in bina. assumption.
-intuition. assumption.
+pose proof Nat.lt_irrefl.
+scrush.
 Qed.
 
 Theorem sole_sub_does_nothing : forall a t t2,
   ~ Contains (TVar a) t2 -> apply (sole_sub a t) t2 = t2.
 Proof.
-intros. induction t2.
-- unfold apply. unfold sole_sub. destruct (Nat.eq_dec a t0).
-  * rewrite e in H. pose (Here (TVar t0)). contradiction.
-  * reflexivity.
-- unfold apply. reflexivity.
-- assert (~ Contains (TVar a) t2_1). intro. exact (H (InLeft _ _ _ H0)).
-  assert (~ Contains (TVar a) t2_2). intro. exact (H (InRight _ _ _ H1)).
-  apply IHt2_1 in H0. apply IHt2_2 in H1.
-  rewrite apply_goes_into_tapp. rewrite H0. rewrite H1.
-  reflexivity.
+intros. induction t2; unfold sole_sub; scrush.
 Qed.
 
 Theorem occurs_check : forall a t,
@@ -204,18 +170,12 @@ refine (
     inleft _
 ).
 - pose proof (occurs_check _ _ c). destruct t.
-  * left. exists identity. dependent destruction c. 
-    split. easy. split.
-    unfold isMGU. intros. exists s'. intro. rewrite identity_does_nothing.
-    reflexivity.
-    unfold unifying_subst. split.
-    left. apply identity_does_nothing.
-    intros. right. rewrite identity_does_nothing in H0.  assumption.
-  * right. dependent destruction c.
-  * right. destruct H. congruence. assumption.
+  left. exists identity. dependent destruction c.
+    reasy (@identity_does_nothing) (@unifies, @isMGU, @unifying_subst).
+    scrush. scrush.
 
 - exists (sole_sub a t).
-  assert (TVar a <> t). intro. rewrite H in n. exact (n (Here t)).
+  assert (TVar a <> t). scrush.
   split; [idtac | split].
   * unfold unifies. rewrite sole_sub_works. rewrite sole_sub_does_nothing.
     reflexivity. assumption.
@@ -226,9 +186,7 @@ refine (
       rewrite sole_sub_does_nothing. reflexivity.
       intro. dependent destruction H1. easy.
     + easy.
-    + repeat rewrite apply_goes_into_tapp.
-      rewrite <- IHt0_1. rewrite <- IHt0_2.
-      reflexivity.
+    + scrush.
   * unfold unifying_subst. split.
     right. exists a. split.
     auto.
@@ -238,8 +196,7 @@ refine (
       rewrite sole_sub_does_nothing.
       all: (intro; dependent destruction H0; contradiction).
     + now compute.
-    + rewrite apply_goes_into_tapp. intro. dependent destruction H0.
-      contradiction. contradiction.
+    + scrush.
   + intros. induction x.
     pose (Nat.eq_dec a0 t0). destruct s.
     rewrite e. auto.
@@ -248,9 +205,7 @@ refine (
     rewrite sole_sub_does_nothing in H0. dependent destruction H0. contradiction.
     intro. dependent destruction H1. contradiction.
     compute in H0. dependent destruction H0.
-    rewrite apply_goes_into_tapp in H0. dependent destruction H0.
-    apply IHx1 in H0. destruct H0. auto. auto.
-    apply IHx2 in H0. destruct H0. auto. auto.
+    rewrite apply_goes_into_tapp in H0. dependent destruction H0; scrush.
 Defined.
 
 Definition reverse_bind : forall a b t,
@@ -315,15 +270,30 @@ match a, b with
 end.
 
 Next Obligation.
-split; [compute; reflexivity | split].
-unfold isMGU; intros; exists s'; intro;
-  rewrite identity_does_nothing; reflexivity.
-unfold unifying_subst. split. auto.
-intros. right. rewrite identity_does_nothing in H. assumption.
+Reconstr.reasy (@identity_does_nothing) (@unifies, @unifying_subst, @isMGU).
 Qed.
 
 Next Obligation.
-compute; intro; injection H0; assumption.
+scrush.
+Qed.
+
+Next Obligation.
+destruct nvars.
+destruct H.
+unfold le_n_vars.
+exists x. scrush.
+Qed.
+
+Next Obligation.
+apply less_size_l.
+Qed.
+
+Next Obligation.
+destruct nvars. destruct a. exists x. scrush.
+Qed.
+
+Next Obligation.
+apply less_size_r.
 Qed.
 
 Ltac dd :=
@@ -332,45 +302,21 @@ match goal with
 end.
 
 Next Obligation.
-destruct nvars.
-destruct H.
-unfold le_n_vars.
-exists x. split. assumption.
-intros. dd.
-Qed.
-
-Next Obligation.
-apply less_size_l.
-Qed.
-
-Next Obligation.
-destruct nvars. destruct a. exists x. split. assumption.
-  intros. apply s. dd.
-Qed.
-
-Next Obligation.
-apply less_size_r.
-Qed.
-
-Next Obligation.
 unfold unifies. unfold unifies in u.
 intuition.
-- repeat rewrite apply_goes_into_tapp. rewrite u. reflexivity.
-- unfold isMGU. intros. unfold isMGU in i.
-  unfold unifies in H. repeat rewrite apply_goes_into_tapp in H. injection H. intros. apply i in H0.
-  destruct H0. exists x. assumption.
+- scrush.
+- Reconstr.rcrush (@apply_goes_into_tapp) (@unifies, @isMGU).
 - unfold unifying_subst. destruct u0. split. destruct o. left. assumption.
   right. destruct e. destruct a. exists x. split. dd. assumption.
   intros. apply o0 in H. destruct H. dd. auto.
 Qed.
 
 Next Obligation.
-unfold unifies. repeat rewrite apply_goes_into_tapp. intro. injection H. intro.
-apply fail in H0. assumption.
+scrush.
 Qed.
 
 Next Obligation.
-destruct u0. destruct o. unfold unifies in u. pose proof u. repeat rewrite e in H0. contradiction.
+destruct u0. destruct o. scrush.
 destruct n. destruct nvars. destruct a. destruct x. destruct e. destruct a.
   exfalso. pose proof (s x). apply H0. dd.
   easy.
@@ -426,38 +372,31 @@ intuition.
   destruct H2.
   repeat rewrite H2 in H1. apply i in H1. destruct H1.
   exists x0. intro. rewrite sequence_application. rewrite <- H1. rewrite H2. reflexivity.
-- apply subst_sequencing_variable_loss. assumption. assumption.
+- apply subst_sequencing_variable_loss; assumption.
 Qed.
 
 Next Obligation.
-intro. injection H0. intros. apply i in H2. destruct H2. repeat rewrite H2 in H1. apply fail in H1.
-assumption.
+Reconstr.rscrush (@apply_goes_into_tapp) (@isMGU, @unifies).
 Qed.
 
 Next Obligation.
-intro. unfold unifies in H. simpl in H. injection H. intros. apply fail in H1. assumption.
+scrush.
 Qed.
 
 (** failure case *)
 Next Obligation.
-intro. destruct a.
-refine (H0 _ _ _). easy.
-destruct b.
-  refine (H1 _ _ _). easy.
-  refine (H2 _ _ _). easy.
-  unfold unifies in H3. simpl in H3. congruence.
-destruct b.
-  now refine (H1 _ _ _).
-  compute in H3. congruence.
-  now refine (H _ _ _ _ _).
+destruct a.
+scrush.
+destruct b; scrush.
+destruct b; scrush.
 Qed.
 
 Next Obligation.
-repeat split. all: easy.
+scrush.
 Qed.
 
 Next Obligation.
-repeat split. all: easy.
+scrush.
 Qed.
 
 Lemma less_tvars_or_size_wf : forall n x, Acc less_tvars_or_size (n, x).
@@ -476,7 +415,7 @@ induction x. all: apply Acc_intro; intros; dependent destruction H.
 Defined.
 
 Next Obligation.
-apply measure_wf. unfold well_founded. intros. destruct a. apply less_tvars_or_size_wf.
+apply measure_wf. unfold well_founded. reasy (@less_tvars_or_size_wf) Reconstr.Empty.
 Defined.
 
 Fixpoint list_vars x :=

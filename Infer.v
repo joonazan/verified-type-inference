@@ -1,4 +1,5 @@
 Load Unify.
+From Hammer Require Import Reconstr.
 Open Scope string_scope.
 
 Definition uncurry {A B C} (f : A -> B -> C) (x : A * B) :=
@@ -26,21 +27,18 @@ match xs with
 end.
 
 Next Obligation.
-unfold unifies_all. intuition.
-unfold isMGU_many. intros. exists s'. intro. rewrite identity_does_nothing. easy.
+rsimple (@identity_does_nothing) (@unifies_all, @isMGU_many, @Coq.Lists.List.In).
 Qed.
 
 Next Obligation. split.
 unfold unifies_all. intros. unfold unifies. repeat rewrite sequence_application.
-destruct H.
-  injection H. intros. destruct H1. destruct H0. easy.
-  apply u0 in H. destruct H. reflexivity.
+destruct H;
+  rcrush Reconstr.Empty (@unifies_all, @unifies).
 
 unfold isMGU_many. intros.
 destruct (i0 s'). unfold unifies_all. intros. apply H. right; easy.
-destruct (i x). unfold unifies. repeat rewrite <- H0. rewrite (H a b). easy.
-  left; easy.
-exists x0. intro. rewrite sequence_application. rewrite <- H1. rewrite <- H0. reflexivity.
+destruct (i x). unfold unifies. rexhaustive1 Reconstr.Empty (@Coq.Lists.List.In, @unifies_all, @unifies).
+exists x0. intro. rewrite sequence_application. scrush.
 Qed.
 
 Lemma uncons_unifies_all : forall s a b t, unifies_all s ((a, b) :: t) -> unifies s a b /\ unifies_all s t.
