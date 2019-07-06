@@ -190,6 +190,46 @@ match t with
 | TApp a b => TApp (add_to_tvars x a) (add_to_tvars x b)
 end.
 
+Definition unifies_typings s a b :=
+    unifies s (fst a) (fst b) /\
+    forall k v1 v2,
+      Map.MapsTo k v1 (snd a) -> Map.MapsTo k v2 (snd b) -> unifies s v1 v2.
+
+Definition typing_MGU s a b :=
+  unifies_typings s a b /\
+  forall s',
+    unifies_typings s' a b ->
+    exists diff,
+    forall t, apply s' t = apply diff (apply s t).
+
+Definition try_pair {t} (a b : option t) : option (t * t) :=
+  match a, b with
+  | Some a', Some b' => Some (a', b')
+  | _, _ => None
+  end.
+
+Program Definition unify_typings (t1 t2 : typing) :
+  { s | typing_MGU s t1 t2 } + { forall s, ~ unifies_typings s t1 t2 } :=
+  let pairs := values (Map.map2 try_pair (snd t1) (snd t2)) in
+  match unify_many ((fst t1, fst t2) :: pairs) with
+  | inleft s => inleft s
+  | inright _ => inright _
+  end.
+
+Next Obligation.
+split.
+unfold unifies_typings.
+split.
+apply u. intuition.
+
+intros.
+apply u.
+cbn. right.
+Admitted.
+
+Next Obligation.
+Admitted.
+  
 Program Fixpoint infer (e : expression) {measure (esize e)} :
   { t | well_typed e (fst t) /\ most_general_type e (fst t) /\ typing_nvars t} + { forall t, ~ well_typed e t } :=
 match e with
@@ -248,7 +288,15 @@ unfold Map.Equal. intro. destruct (string_dec x y).
 split.
 unfold most_general_type. intros.
 destruct t2. simpl. dependent destruction H. apply m in H. destruct H. simpl in H.
-exists x0. rewrite H.
+destruct H.
+exists x0. split.
+  rewrite H. apply eq_sym in Heq_anonymous. apply H0 in Heq_anonymous.
+  rcrush (@Infer.MF.add_eq_o) (@Map.key, @Infer.Env, @name).
+
+  intros. destruct(old_string_EQ.eq_dec x x1).
+    rewrite MF.remove_eq_o in H1; easy.
+    rewrite MF.remove_neq_o in H1. apply H0 in H1.
+    rewrite MF.add_neq_o in H1; easy. easy.
 
 apply mk_typing_nvars. dependent destruction t0. destruct a. split.
 unfold vars_below. intros. dependent destruction H. dependent destruction H.
@@ -258,8 +306,18 @@ assumption.
 Qed.
 
 Next Obligation. split.
-apply (wt_Lambda (S n)). give_up.
-(* liian helppo todistaa. hyväksyisi mitä vaan argumentin tyypiksi *)
+apply wt_Lambda.
+(* prove that unique extra variable is harmless *) give_up.
+
+split.
+unfold most_general_type. intros.
+dependent destruction H. apply m in H. destruct H. simpl in H. simpl.
+destruct H.
+  exists x0. split.
+  rewrite H. give_up.
+
+  intros. destruct(old_string_EQ.eq_dec x x1);
+    reasy (@Infer.MF.add_neq_o) (@name, @Map.key).
 
 dependent destruction t0. destruct a. split. split.
   unfold vars_below. intros. dependent destruction H. dependent destruction H. dependent destruction H.
@@ -269,7 +327,7 @@ dependent destruction t0. destruct a. split. split.
 Admitted.
 
 Next Obligation.
-intro. dependent destruction H. apply wildcard' in H. easy.
+scrush.
 Qed.
 
 Next Obligation.
@@ -281,4 +339,8 @@ simpl. pose proof (esize_is_nonzero f). omega.
 Qed.
 
 Next Obligation.
-Admitted.
+split.
+apply (wt_Call f x x_t_).
+pose proof (u f_t (add_to_tvars f_n x_t_ '-> TVar (x_n_ + f_n))).
+unfold unifies in H.
+simpl in H.
