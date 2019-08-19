@@ -1,5 +1,7 @@
 Require Import String Arith.
-Require Import Program Omega List ListSet.
+Require Import Program Omega List.
+Require Import RelationClasses.
+Require Import Ensembles Constructive_sets.
 From Hammer Require Import Reconstr.
 
 Definition name := string.
@@ -10,10 +12,9 @@ Inductive Tipe : Type :=
 | TConst : name -> Tipe
 | TApp : Tipe -> Tipe -> Tipe.
 
-Definition eq_dec (a : Tipe) (b : Tipe) : { a = b } + { ~ a = b }.
+Definition tipe_dec (a : Tipe) (b : Tipe) : { a = b } + { ~ a = b }.
 repeat decide equality.
 Defined.
-
 Definition Subst := nat -> Tipe.
 Definition identity x := TVar x.
 Definition sole_sub x t y :=
@@ -57,155 +58,164 @@ easy.
 Qed.
 
 Inductive Contains : Tipe -> Tipe -> Prop :=
-  Here : forall t, Contains t t
+| Here : forall t, Contains t t
 | InLeft : forall a t t2, Contains a t -> Contains a (TApp t t2)
 | InRight : forall a t t2, Contains a t -> Contains a (TApp t2 t).
 
 Hint Constructors Contains.
+Notation "a <= b" := (Contains a b) (at level 70).
 
-Definition contains_dec t t2 : { Contains t t2 } + { ~ Contains t t2 }.
-destruct (eq_dec t t2).
-- left. rewrite e. apply Here.
-- induction t2.
-  * scrush.
-  * scrush.
-  * destruct (eq_dec t t2_1).
-    + scrush.
-    + apply IHt2_1 in n0. destruct n0.
-        scrush.
-        destruct (eq_dec t t2_2); scrush.
-Defined.
-
-Theorem map_containment : forall s x t,
-  Contains x t -> Contains (apply s x) (apply s t).
-Proof.
-intros. induction H; scrush.
-Qed.
-
-Theorem containment_transitive : forall a b c,
-  Contains a b -> Contains b c -> Contains a c.
-Proof.
-intros. induction H0; scrush.
-Qed.
-
-Theorem bad_recursion_left : forall a b, a <> TApp a b.
-Proof.
-induction a; scrush.
-Qed.
-
-Theorem bad_recursion_right : forall a b, b <> TApp a b.
-Proof.
-induction b; scrush.
+Program Instance Contains_Reflexive : Reflexive Contains.
+Instance Contains_Transitive : Transitive Contains.
+compute; intros.
+induction H0; scrush.
 Qed.
 
 Fixpoint size x :=
 match x with
-  TVar _ => 1
+| TVar _ => 1
 | TConst _ => 1
 | TApp a b => size a + size b
 end.
 
 Lemma size_is_nonzero : forall x, 0 < size x.
-induction x.
-- compute; easy.
-- compute; easy.
-- pose proof Nat.lt_add_pos_r. scrush.
+  induction x; cbn; omega.
 Qed.
 
-Lemma contained_is_smaller : forall a b, Contains a b -> a <> b -> size a < size b.
-intros.
-pose proof Nat.lt_add_pos_r. pose proof size_is_nonzero.
-dependent induction H.
-contradiction.
-destruct (eq_dec a t); scrush.
-destruct (eq_dec a t); pose proof Nat.lt_add_pos_l; scrush.
+Lemma containment_to_size : forall a b,
+    a <= b -> (size a <= size b)%nat.
+  induction b.
+  scrush.
+  scrush.
+  intro. dependent destruction H.
+  easy.
+  apply IHb1 in H; cbn; omega.
+  apply IHb2 in H; cbn; omega.
+Qed.
+
+Theorem bad_recursion_left : forall a b, ~ TApp a b <= a.
+  intuition.
+  apply containment_to_size in H; cbn in H.
+  pose proof size_is_nonzero b.
+  omega.
+Qed.
+
+Theorem bad_recursion_right : forall a b, ~ TApp a b <= b.
+  intuition.
+  apply containment_to_size in H; cbn in H.
+  pose proof size_is_nonzero a.
+  omega.
+Qed.
+
+(* TODO: currently partialorder is not used anywhere, remove? *)
+Program Instance Contains_PreOrder : PreOrder Contains.
+Instance Contains_PartialOrder : PartialOrder eq Contains.
+compute.
+intuition.
+scrush.
+scrush.
+dependent induction H0.
+- easy.
+- exfalso; apply (bad_recursion_left t t2); eauto using transitivity.
+- exfalso; apply (bad_recursion_right t2 t); eauto using transitivity.
+Qed.
+
+Definition contains_dec t t2 : { t <= t2 } + { ~ t <= t2 }.
+destruct (tipe_dec t t2).
+- left. rewrite e. apply Here.
+- induction t2.
+  * scrush.
+  * scrush.
+  * destruct (tipe_dec t t2_1).
+    + scrush.
+    + apply IHt2_1 in n0. destruct n0.
+        scrush.
+        destruct (tipe_dec t t2_2); scrush.
+Defined.
+
+Theorem map_containment : forall s x t,
+  x <= t -> apply s x <= apply s t.
+  intros. induction H; scrush.
 Qed.
 
 Theorem impossible_loop {a b}
-  (ainb : Contains a b) (bina : Contains b a) (anotb : a <> b) : False.
-pose proof contained_is_smaller.
-pose proof Nat.lt_irrefl.
-scrush.
+        (ainb : a <= b) (bina : b <= a) (anotb : a <> b) : False.
+  assert (a = b).
+  apply partial_order_equivalence.
+  compute. auto.
+  contradiction.
 Qed.
 
 Theorem sole_sub_does_nothing : forall a t t2,
-  ~ Contains (TVar a) t2 -> apply (sole_sub a t) t2 = t2.
+  ~ TVar a <= t2 -> apply (sole_sub a t) t2 = t2.
 Proof.
 intros. induction t2; unfold sole_sub; scrush.
 Qed.
 
 Theorem occurs_check : forall a t,
-  Contains (TVar a) t -> t = TVar a \/ forall s, ~ unifies s (TVar a) t.
-Proof.
+  TVar a <= t -> TVar a = t \/ forall s, ~ unifies s (TVar a) t.
 intros. induction H.
 - left. reflexivity.
-- right. intro. intro. unfold unifies in H0.
-  rewrite apply_goes_into_tapp in H0. apply (map_containment s) in H.
-  rewrite H0 in H.
-  pose proof (impossible_loop H). pose InLeft. apply H1 in c. assumption.
-  apply Here.
-  intro. apply eq_sym in H2. apply bad_recursion_left in H2. assumption.
-- right. intro. intro. unfold unifies in H0.
-  rewrite apply_goes_into_tapp in H0. apply (map_containment s) in H.
-  rewrite H0 in H.
-  pose proof (impossible_loop H). pose InRight. apply H1 in c. assumption.
-  apply Here.
-  intro. apply eq_sym in H2. apply bad_recursion_right in H2. assumption.
+- right. intro. intro.
+  apply (map_containment s) in H. rewrite H0 in H.
+  now apply bad_recursion_left in H.
+- right. intro. intro.
+  apply (map_containment s) in H. rewrite H0 in H.
+  now apply bad_recursion_right in H.
 Qed.
 
-Definition unifying_subst s source :=
-  ((forall x, apply s x = x) \/ exists a, Contains (TVar a) source /\ forall x, ~ Contains (TVar a) (apply s x))
-  /\ forall a x, Contains (TVar a) (apply s x) -> (Contains (TVar a) source \/ Contains (TVar a) x).
+Fixpoint variables (t : Tipe) : Ensemble tvarname :=
+  match t with
+  | TVar x => Singleton _ x
+  | TConst _ => Empty_set _
+  | TApp a b => Union _ (variables a) (variables b)
+  end.
 
-Definition less_vars a b :=
-  (exists x, ~ Contains (TVar x) a /\ Contains (TVar x) b)
-  /\ forall v, Contains (TVar v) a -> Contains (TVar v) b.
+Definition less_vars a b := Strict_Included _ (variables a) (variables b).
+
+Definition unifying_subst s source_vars :=
+  forall x, Included _ (variables (apply s x)) (Union _ source_vars (variables x)).
 
 Definition bind (a : nat) (t : Tipe) :
-  { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (TApp (TVar a) t) } + { forall s, ~ unifies s (TVar a) t }.
+  { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (Add _ (variables t) a) } + { forall s, ~ unifies s (TVar a) t }.
 refine (
   if contains_dec (TVar a) t then
     _
   else
-    inleft _
+    inleft (exist _ (sole_sub a t) _)
 ).
 - pose proof (occurs_check _ _ c). destruct t.
-  left. exists identity. dependent destruction c.
-    reasy (@identity_does_nothing) (@unifies, @isMGU, @unifying_subst).
-    scrush. scrush.
-
-- exists (sole_sub a t).
-  assert (TVar a <> t). scrush.
-  split; [idtac | split].
+  * left. exists identity. dependent destruction c.
+    rcrush (identity_does_nothing) (isMGU).
+  * scrush.
+  * scrush.
+- split; [idtac | split].
   * unfold unifies. rewrite sole_sub_works. rewrite sole_sub_does_nothing.
     reflexivity. assumption.
   * unfold isMGU. unfold unifies. intros. exists s'. intro.
     induction t0.
-    + refine (if Nat.eq_dec a t0 then _ else _).
-      rewrite <- e. rewrite H0. rewrite sole_sub_works. reflexivity.
+    + destruct (Nat.eq_dec a t0).
+      rewrite <- e. rewrite H. rewrite sole_sub_works. reflexivity.
       rewrite sole_sub_does_nothing. reflexivity.
-      intro. dependent destruction H1. easy.
+      intro. dependent destruction H0. easy.
     + easy.
     + scrush.
-  * unfold unifying_subst. split.
-    right. exists a. split.
+  * unfold unifying_subst. intro.
+    pose proof Union_introl.
+    pose proof Union_intror.
+    induction x.
+    destruct (Nat.eq_dec a t0).
+    rewrite e. rewrite sole_sub_works. give_up.
+    rewrite sole_sub_does_nothing. auto with sets.
+    scrush.
+    simpl. auto with sets.
+    simpl. unfold Included. intros. apply Union_inv in H1.
+    destruct H1.
+    unfold Included in IHx1. apply IHx1 in H1.
+    apply Union_inv in H1. destruct H1.
     auto.
-    intro. induction x.
-    + pose (Nat.eq_dec a t0). destruct s.
-      rewrite <- e. rewrite sole_sub_works. assumption.
-      rewrite sole_sub_does_nothing.
-      all: (intro; dependent destruction H0; contradiction).
-    + now compute.
-    + scrush.
-  + intros. induction x.
-    pose (Nat.eq_dec a0 t0). destruct s.
-    rewrite e. auto.
-    left. pose (Nat.eq_dec a t0). destruct s.
-    destruct e. rewrite sole_sub_works in H0. auto.
-    rewrite sole_sub_does_nothing in H0. dependent destruction H0. contradiction.
-    intro. dependent destruction H1. contradiction.
-    compute in H0. dependent destruction H0.
-    rewrite apply_goes_into_tapp in H0. dependent destruction H0; scrush.
+    auto.
+    apply Union_intror. auto .
 Defined.
 
 Definition reverse_bind : forall a b t,
@@ -252,7 +262,7 @@ match a, b with
 | TApp a1 a2, TApp b1 b2 =>
   match unify_impl n a1 b1 _ with
     inleft (exist _ s1 p1) =>
-      if eq_dec a1 b1 then
+      if tipe_dec a1 b1 then
         match unify_impl n a2 b2 _ with
         | inleft (exist _ s p) => inleft s
         | inright fail => inright _
