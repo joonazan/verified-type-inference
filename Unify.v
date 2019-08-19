@@ -1,14 +1,14 @@
-Require Import String Arith.
-Require Import Program Omega List.
-Require Import RelationClasses.
-Require Import Ensembles Constructive_sets.
-From Hammer Require Import Reconstr.
+From Coq Require Import Init.Prelude Unicode.Utf8.
+From Coq Require Import String Arith.
+From Coq Require Import Program Omega List.
+From Coq Require Import RelationClasses.
+From Coq Require Import Ensembles Constructive_sets.
 
 Definition name := string.
 Definition tvarname := nat.
 
 Inductive Tipe : Type :=
-  TVar : tvarname -> Tipe
+| TVar : tvarname -> Tipe
 | TConst : name -> Tipe
 | TApp : Tipe -> Tipe -> Tipe.
 
@@ -35,25 +35,25 @@ Definition isMGU s a b := forall s', unifies s' a b
   -> exists delta, forall t, apply s' t = apply delta (apply s t).
 
 Theorem identity_does_nothing : forall x, apply identity x = x.
-Proof.
-induction x; scrush.
+induction x; auto.
+cbn; congruence.
 Qed.
 Hint Resolve identity_does_nothing.
 
 Theorem sole_sub_works : forall a t, apply (sole_sub a t) (TVar a) = t.
-Proof.
-unfold sole_sub; scrush.
+intros.
+unfold sole_sub. cbn.
+destruct (Nat.eq_dec a a); easy.
 Qed.
 
 Theorem sequence_application : forall x, forall u, forall v,
   apply (sequence v u) x = apply v (apply u x).
-Proof.
-induction x; scrush.
+induction x; auto.
+cbn; congruence.
 Qed.
 
 Theorem apply_goes_into_tapp : forall s, forall a, forall b,
   apply s (TApp a b) = TApp (apply s a) (apply s b).
-Proof.
 easy.
 Qed.
 
@@ -68,7 +68,7 @@ Notation "a <= b" := (Contains a b) (at level 70).
 Program Instance Contains_Reflexive : Reflexive Contains.
 Instance Contains_Transitive : Transitive Contains.
 compute; intros.
-induction H0; scrush.
+induction H0; auto.
 Qed.
 
 Fixpoint size x :=
@@ -84,11 +84,7 @@ Qed.
 
 Lemma containment_to_size : forall a b,
     a <= b -> (size a <= size b)%nat.
-  induction b.
-  scrush.
-  scrush.
-  intro. dependent destruction H.
-  easy.
+  induction b; intro; dependent destruction H; auto.
   apply IHb1 in H; cbn; omega.
   apply IHb2 in H; cbn; omega.
 Qed.
@@ -107,19 +103,7 @@ Theorem bad_recursion_right : forall a b, ~ TApp a b <= b.
   omega.
 Qed.
 
-(* TODO: currently partialorder is not used anywhere, remove? *)
-Program Instance Contains_PreOrder : PreOrder Contains.
-Instance Contains_PartialOrder : PartialOrder eq Contains.
-compute.
-intuition.
-scrush.
-scrush.
-dependent induction H0.
-- easy.
-- exfalso; apply (bad_recursion_left t t2); eauto using transitivity.
-- exfalso; apply (bad_recursion_right t2 t); eauto using transitivity.
-Qed.
-
+(*
 Definition contains_dec t t2 : { t <= t2 } + { ~ t <= t2 }.
 destruct (tipe_dec t t2).
 - left. rewrite e. apply Here.
@@ -131,25 +115,18 @@ destruct (tipe_dec t t2).
     + apply IHt2_1 in n0. destruct n0.
         scrush.
         destruct (tipe_dec t t2_2); scrush.
-Defined.
+Defined. *)
 
 Theorem map_containment : forall s x t,
   x <= t -> apply s x <= apply s t.
-  intros. induction H; scrush.
-Qed.
-
-Theorem impossible_loop {a b}
-        (ainb : a <= b) (bina : b <= a) (anotb : a <> b) : False.
-  assert (a = b).
-  apply partial_order_equivalence.
-  compute. auto.
-  contradiction.
+  intros. induction H; auto;
+  cbn; eauto using transitivity.
 Qed.
 
 Theorem sole_sub_does_nothing : forall a t t2,
   ~ TVar a <= t2 -> apply (sole_sub a t) t2 = t2.
 Proof.
-intros. induction t2; unfold sole_sub; scrush.
+intros. induction t2; unfold sole_sub.
 Qed.
 
 Theorem occurs_check : forall a t,
