@@ -103,19 +103,20 @@ Theorem bad_recursion_right : forall a b, ~ TApp a b <= b.
   omega.
 Qed.
 
-(*
 Definition contains_dec t t2 : { t <= t2 } + { ~ t <= t2 }.
 destruct (tipe_dec t t2).
 - left. rewrite e. apply Here.
 - induction t2.
-  * scrush.
-  * scrush.
-  * destruct (tipe_dec t t2_1).
-    + scrush.
-    + apply IHt2_1 in n0. destruct n0.
-        scrush.
-        destruct (tipe_dec t t2_2); scrush.
-Defined. *)
+  right; intro; now dependent destruction H.
+  right; intro; now dependent destruction H.
+  destruct (tipe_dec t t2_1).
+  * rewrite e. auto.
+  * apply IHt2_1 in n0. destruct n0.
+    auto.
+    destruct (tipe_dec t t2_2). rewrite e. auto.
+    apply IHt2_2 in n1. destruct n1. auto.
+    right. intro. dependent destruction H; contradiction.
+Defined.
 
 Theorem map_containment : forall s x t,
   x <= t -> apply s x <= apply s t.
@@ -126,7 +127,12 @@ Qed.
 Theorem sole_sub_does_nothing : forall a t t2,
   ~ TVar a <= t2 -> apply (sole_sub a t) t2 = t2.
 Proof.
-intros. induction t2; unfold sole_sub.
+intros. induction t2.
+unfold sole_sub. simpl. destruct (Nat.eq_dec a t0). destruct e.
+contradiction H. easy.
+easy.
+easy.
+cbn. rewrite IHt2_1. rewrite IHt2_2. all: auto.
 Qed.
 
 Theorem occurs_check : forall a t,
