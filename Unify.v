@@ -169,9 +169,11 @@ refine (
 ).
 - pose proof (occurs_check _ _ c). destruct t.
   * left. exists identity. dependent destruction c.
-    rcrush (identity_does_nothing) (isMGU).
-  * scrush.
-  * scrush.
+    split. easy.
+    split. unfold isMGU. intros. exists s'. intro. now rewrite identity_does_nothing.
+    unfold unifying_subst. intro. rewrite identity_does_nothing. auto with sets.
+  * right. dependent destruction c.
+  * right. destruct H. dependent destruction H. assumption.
 - split; [idtac | split].
   * unfold unifies. rewrite sole_sub_works. rewrite sole_sub_does_nothing.
     reflexivity. assumption.
@@ -182,15 +184,15 @@ refine (
       rewrite sole_sub_does_nothing. reflexivity.
       intro. dependent destruction H0. easy.
     + easy.
-    + scrush.
+    + cbn. congruence.
   * unfold unifying_subst. intro.
     pose proof Union_introl.
     pose proof Union_intror.
     induction x.
     destruct (Nat.eq_dec a t0).
-    rewrite e. rewrite sole_sub_works. give_up.
+    destruct e. rewrite sole_sub_works. auto with sets.
     rewrite sole_sub_does_nothing. auto with sets.
-    scrush.
+    intro. dependent destruction H1. easy.
     simpl. auto with sets.
     simpl. unfold Included. intros. apply Union_inv in H1.
     destruct H1.
@@ -198,7 +200,8 @@ refine (
     apply Union_inv in H1. destruct H1.
     auto.
     auto.
-    apply Union_intror. auto .
+    apply IHx2 in H1.
+    destruct H1; auto.
 Defined.
 
 Definition reverse_bind : forall a b t,
