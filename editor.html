@@ -4,7 +4,7 @@
     <meta http-equiv="content-type" content="text/html;charset=utf-8" />
     <meta name="description" content="An Online IDE for the Coq Theorem Prover" />
 
-    <link rel="stylesheet" type="text/css" href="https://x80.org/rhino-coq/node_modules/bootstrap/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/bootstrap/dist/css/bootstrap.min.css">
 
     <title>Use Coq in Your Browser: The Js Coq Theorem Prover Online IDE!</title>
   </head>
@@ -27,14 +27,14 @@ Unset Printing Implicit Defensive. </textarea>
   </div> <!-- /#code-wrapper -->
   </div> <!-- /#ide-wrapper -->
 
-  <script src="https://x80.org/rhino-coq/ui-js/jscoq-loader.js" type="text/javascript"></script>
+  <script src="https://unpkg.com/jscoq/ui-js/jscoq-loader.js" type="text/javascript"></script>
   <script type="text/javascript">
 
-    var jscoq_ids  = ['addnC', 'prime_above1', 'prime_above2', 'prime_above3', 'prime_above4' ];
+    var jscoq_ids  = ['addnC'];
     var jscoq_opts = {
         prelude:   false,
         implicit_libs: false,
-        base_path: './',
+        base_path: 'https://unpkg.com/jscoq/',
         editor: { mode: { 'company-coq': true }, keyMap: 'default' },
         init_pkgs: ['init'],
         all_pkgs:  ['init', 'math-comp', 'iris', 'elpi', 'equations', 'ltac2', 'stdpp',
