@@ -204,57 +204,49 @@ refine (
     destruct H1; auto.
 Defined.
 
+Lemma unifies_sym : forall s a b, unifies s a b -> unifies s b a.
+unfold unifies. auto.
+Qed.
+Hint Resolve unifies_sym.
+
+Lemma isMGU_sym : forall s a b, isMGU s a b -> isMGU s b a.
+unfold isMGU. intros. destruct (H s'); auto.
+Qed.
+
 Definition reverse_bind : forall a b t,
-   { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (TApp (TVar a) b) } + { forall s, ~ unifies s (TVar a) t }
--> { s | unifies s t (TVar a) /\ isMGU s t (TVar a) /\ unifying_subst s (TApp b (TVar a)) } + { forall s, ~ unifies s t (TVar a) }.
+   { s | unifies s (TVar a) t /\ isMGU s (TVar a) t /\ unifying_subst s (Add _ b a) } + { forall s, ~ unifies s (TVar a) t }
+-> { s | unifies s t (TVar a) /\ isMGU s t (TVar a) /\ unifying_subst s (Add _ b a) } + { forall s, ~ unifies s t (TVar a) }.
 Proof.
 intros. destruct H.
 - left. destruct s. destruct a0. destruct H0. exists x. split. easy. split.
   unfold isMGU. intros. unfold isMGU in H0. specialize H0 with s'. destruct H0.
   unfold unifies. unfold unifies in H1. apply eq_sym. assumption.
   exists x0. assumption.
-  destruct H1. unfold unifying_subst. split. destruct H1. auto.
-  destruct H1. destruct H1. right. exists x0. split. dependent destruction H1. auto. auto.
-  assumption. intros. apply H2 in H3. destruct H3. left. dependent destruction H3. auto. auto. auto.
+  assumption.
 - right. intro. intro. unfold unifies in H. apply eq_sym in H. apply n in H. assumption.
 Defined.
 
-Definition le_n_vars n t :=
-  exists vars, List.length vars = n /\ (forall a, Contains (TVar a) t -> set_In a vars).
+Inductive less_tvars_or_size : Tipe -> Tipe -> Prop :=
+| less_tvars : forall a b, less_vars a b -> less_tvars_or_size a b
+| less_size_l : forall a b, less_tvars_or_size a (TApp a b)
+| less_size_r : forall a b, less_tvars_or_size a (TApp b a).
 
-Lemma removing_shortens : forall n a s,
-  set_In a s -> List.length s = S n -> List.length (set_remove Nat.eq_dec a s) = n.
-fix rec 1. intros.
-destruct s. easy.
-pose (Nat.eq_dec n0 a). destruct s0.
-  rewrite e. simpl. destruct Nat.eq_dec. auto. easy.
-  simpl. destruct Nat.eq_dec. auto. simpl. destruct n.
-    destruct H. easy.
-    simpl in H0. destruct s. destruct H. simpl in H0. easy.
-  apply eq_S. destruct H. easy. apply rec. assumption.
-    simpl in H0. auto.
-Defined.
-
-Inductive less_tvars_or_size : nat * Tipe -> nat * Tipe -> Prop :=
-| less_tvars : forall n a a', less_tvars_or_size (n, a) (S n, a')
-| less_size_l : forall n a b, less_tvars_or_size (n, a) (n, TApp a b)
-| less_size_r : forall n a b, less_tvars_or_size (n, a) (n, TApp b a).
-
-Program Fixpoint unify_impl (n : nat) (a : Tipe) (b : Tipe) (nvars : le_n_vars n (TApp a b)) {measure (n, a) (less_tvars_or_size) } :
-  { s | unifies s a b /\ isMGU s a b /\ unifying_subst s (TApp a b) } + { forall s, ~ unifies s a b } :=
+Program Fixpoint unify_impl (a : Tipe) (b : Tipe) {measure (a) (less_tvars_or_size) } :
+  { s | unifies s a b /\ isMGU s a b /\
+  unifying_subst s (Union _ (variables a) (variables b)) } + { forall s, ~ unifies s a b } :=
 
 match a, b with
   TConst x, TConst y => if string_dec x y then inleft identity else inright _
 | TApp a1 a2, TApp b1 b2 =>
-  match unify_impl n a1 b1 _ with
+  match unify_impl a1 b1 with
     inleft (exist _ s1 p1) =>
       if tipe_dec a1 b1 then
-        match unify_impl n a2 b2 _ with
+        match unify_impl a2 b2 with
         | inleft (exist _ s p) => inleft s
         | inright fail => inright _
         end
       else
-        match unify_impl (n - 1) (apply s1 a2) (apply s1 b2) _ with
+        match unify_impl (apply s1 a2) (apply s1 b2) with
           inleft (exist _ s2 p2) => inleft (sequence s2 s1)
         | inright fail => inright _
         end
