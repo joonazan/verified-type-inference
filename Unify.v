@@ -205,7 +205,7 @@ Qed.
 Hint Resolve set_union_nodup.
 Hint Resolve variables_nodup.
 
-Ltac prepare :=
+Ltac canonicalize_unify :=
   try intro;
   unfold unifies in *;
 
@@ -225,13 +225,18 @@ Ltac prepare :=
       | [ H : _ ∈ (_ ∪ _) |- _] => destruct H
   end.
 
-Ltac smash :=
-  repeat (prepare;
+Ltac smasher canonicalize :=
+  repeat (canonicalize);
   try congruence;
   try auto with sets;
+  try omega;
   try match goal with
-        [ |- _ \/ _] => first [(solve [left; smash]) | (solve [right; smash])]
-      end).
+        [ |- _ \/ _] =>
+        first [(solve [left; smasher canonicalize])
+              | (solve [right; smasher canonicalize])]
+      end.
+
+Local Ltac smash := smasher canonicalize_unify.
 
 Definition idempotent s := forall x, apply s (apply s x) = apply s x.
 

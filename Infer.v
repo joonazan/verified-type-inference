@@ -1,5 +1,7 @@
-Load Unify.
-From Hammer Require Import Hammer Reconstr.
+From Coq Require Import Unicode.Utf8.
+From Coq Require Import Program.
+Require Import Unify.
+Require Import List String Arith.
 From Equations Require Import Equations.
 Open Scope string_scope.
 
@@ -8,6 +10,22 @@ Definition uncurry {A B C} (f : A -> B -> C) (x : A * B) :=
 
 Definition unifies_all s xs :=
   forall a b, In (a, b) xs -> unifies s a b.
+
+Lemma uncons_unifies_all : forall s a b t, unifies_all s ((a, b) :: t) -> unifies s a b /\ unifies_all s t.
+  repeat canonicalize_unify.
+  apply H. simpl. auto.
+  apply H. apply in_cons. assumption.
+Qed.
+
+Ltac canonicalize_infer :=
+  match goal with
+  | [H : unifies_all _ ((_, _) :: _) |- _] => apply uncons_unifies_all in H
+  | [H : In _ ((_, _) :: _) |- _] => apply in_inv in H
+ (* | [H : In _ (values _) |- _] => apply In_values_MapsTo_equiv in H *)
+  end.
+
+Ltac can := try canonicalize_infer; try canonicalize_unify.
+Ltac smash := smasher can.
 
 Definition isMGU_many s xs := forall s', unifies_all s' xs
   -> exists delta, forall t, apply s' t = apply delta (apply s t).
@@ -23,30 +41,28 @@ Equations unify_many (xs : list (Tipe * Tipe)) :
     | inright _ := inright _ }.
 
 Next Obligation.
-rsimple (@identity_does_nothing) (@unifies_all, @isMGU_many, @Coq.Lists.List.In).
+  smash.
+  destruct H.
+  exists s'; smash.
 Defined.
 
-Lemma uncons_unifies_all : forall s a b t, unifies_all s ((a, b) :: t) -> unifies s a b /\ unifies_all s t.
-rcrush Empty (@unifies_all).
-Qed.
+Next Obligation.
+  smash.
+  apply H in H4. smash.
 
-Next Obligation. split.
-unfold unifies_all. intros. unfold unifies. repeat rewrite sequence_application.
-scrush.
-
-unfold isMGU_many. intros.
-destruct (H0 s'). rcrush (@uncons_unifies_all) Reconstr.Empty.
-destruct (H2 x). rcrush (@uncons_unifies_all) (@unifies).
-exists x0. rcrush (@sequence_application) Empty.
+  destruct (H0 s'). smash. now apply H5.
+  destruct (H2 x). smash.
+  exists x0. smash.
 Qed.
 
 Next Obligation.
-apply uncons_unifies_all in H1. destruct H1.
-destruct (H0 s0); scrush.
+  smash.
+  destruct (H0 s0). smash. apply H2. smash.
+  smash.
 Qed.
 
 Next Obligation.
-apply (wildcard2 s). rcrush (@uncons_unifies_all) Reconstr.Empty.
+  apply (wildcard2 s). now apply uncons_unifies_all in H.
 Qed.
 
 Require Import FMapFacts Equalities.
@@ -63,15 +79,6 @@ End string_EQ.
 Module old_string_EQ := Backport_DT string_EQ.
 Module Infer (Map : WSfun old_string_EQ).
 Module MF := WFacts_fun old_string_EQ Map.
-
-Definition unify_sets sets : list (Tipe * Tipe) :=
-let set_to_pairs set :=
-  match set with
-  | [] => []
-  | h :: t => map (fun x => (h, x)) t
-  end
-in
-  concat (map set_to_pairs sets).
 
 Definition nonempty_list A := { xs : list A | xs <> [] }.
 
@@ -115,8 +122,9 @@ match e with
 | Call a b => esize a + esize b
 | _ => 1
 end.
+
 Lemma esize_is_nonzero : forall e, 0 < esize e.
-induction e. auto. simpl. auto. simpl. intuition.
+  induction e; simpl; smash.
 Qed.
 
 Notation "a '-> b" := (TApp (TApp (TConst "->") a) b) (at level 59, right associativity).
@@ -145,13 +153,9 @@ Definition try_pair {t} (a b : option t) : option (t * t) :=
 
 Lemma try_pair_some : forall t a b c d,
     try_pair (t := t) a b = Some (c, d) -> a = Some c /\ b = Some d.
-intros.
-destruct a eqn:?. destruct b eqn:?.
-cbn in H.
-injection H.
-intros.
-split; congruence.
-all: cbn in H; congruence.
+  intros.
+  destruct a eqn:?. destruct b eqn:?.
+  all: cbn in H; smash.
 Qed.
 
 Equations unify_typings (t1 t2 : typing) :
@@ -165,34 +169,29 @@ Equations unify_typings (t1 t2 : typing) :
 Lemma unifies_all_typings_equiv : forall s t t2 e e2,
   unifies_all s ((t, t2) :: values (Map.map2 try_pair e e2)) <->
   unifies_typings s (t, e) (t2, e2).
-split.
-intros.
-unfold unifies_typings. cbn.
-split.
-apply H.
-left. easy.
-intros.
-apply Map.find_1 in H0.
-apply Map.find_1 in H1.
-apply H. cbn. right.
-rewrite In_values_MapsTo_equiv. exists k.
-apply Map.find_2.
-rewrite Map.map2_1.
-rewrite H0. rewrite H1. easy.
-left. rewrite MF.in_find_iff. congruence.
+  split.
+  intros.
+  unfold unifies_typings. cbn.
+  smash.
+  apply Map.find_1 in H1.
+  apply Map.find_1 in H2.
+  apply H0.
+  rewrite In_values_MapsTo_equiv. exists k.
+  apply Map.find_2.
+  rewrite Map.map2_1.
+  rewrite H1. rewrite H2. smash.
+  left. rewrite MF.in_find_iff. congruence.
 
-unfold unifies_all.
-intros.
-destruct H. cbn in *.
-destruct H0.
-injection H0. intros. rewrite <- H2. rewrite <- H3. easy.
-rewrite In_values_MapsTo_equiv in H0. destruct H0.
-apply Map.find_1 in H0.
-rewrite MF.map2_1bis in H0.
-apply try_pair_some in H0.
-destruct H0.
-apply (H1 x); apply Map.find_2; easy.
-easy.
+  smash. injection H0. smash.
+  destruct H. cbn in *. smash.
+  rewrite In_values_MapsTo_equiv in H0. destruct H0.
+  apply Map.find_1 in H0.
+  rewrite MF.map2_1bis in H0.
+  apply try_pair_some in H0.
+  smash.
+  destruct H.
+  apply (H2 x); apply Map.find_2; smash.
+  smash.
 Qed.
 
 Next Obligation.
