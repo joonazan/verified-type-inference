@@ -208,11 +208,17 @@ Qed.
 
 Inductive well_typed : expression -> Tipe -> Env -> Prop :=
 | wt_Var : forall name env t,
-    Map.MapsTo name t env -> well_typed (Var name) t env
+    Map.MapsTo name t env ->
+    well_typed (Var name) t env
+
 | wt_Lambda : forall name body env argt returnt,
-    well_typed body returnt (Map.add name argt env) -> well_typed (Lambda name body) (argt '-> returnt) env
+    well_typed body returnt (Map.add name argt env) ->
+    well_typed (Lambda name body) (argt '-> returnt) env
+
 | wt_Call : forall f x argt returnt env,
-    well_typed f (argt '-> returnt) env -> well_typed x argt env -> well_typed (Call f x) (returnt) env.
+    well_typed f (argt '-> returnt) env ->
+    well_typed x argt env ->
+    well_typed (Call f x) (returnt) env.
 
 Lemma well_typed_proper : forall e t env env2,
   Map.Equal env env2 -> well_typed e t env -> well_typed e t env2.
@@ -257,79 +263,46 @@ Definition merge {T} : Map.t T -> Map.t T -> Map.t T :=
        | None => b
        end).
 
-Equations infer (exp : expression) :
-  { t | most_general_type exp (fst t) /\ typing_nvars t} +
-  { forall t env, ~ well_typed exp t env } :=
-
-infer (Var a) := inleft (exist _ (TVar 0, (singleton a (TVar 0)), 1) _);
-
-infer (Lambda x b) with infer b => {
-  | inleft (exist _ (t, env, n) _) with Map.find x env => {
-    | Some argt := inleft (exist _ (argt '-> t, Map.remove x env, n) _);
-    | None := inleft (exist _ (TVar n '-> t, env, (S n)) _) };
-  | inright _ := inright _ };
-
-infer (Call f x) with infer f => {
-  | inleft (exist _ (f_t, f_env, f_n) _) with infer x => {
-    | inleft (exist _ (x_t_, x_env_, x_n_) _) :=
-      let x_t := add_to_tvars f_n x_t_ in
-      let x_env := Map.map (add_to_tvars f_n) x_env_ in
-      let x_n := x_n_ + f_n in
-      let ret_t := TVar x_n in
-      match unify_typings (f_t, f_env) (x_t '-> ret_t, x_env) with
-      | inleft _ (exist _ s _) =>
-        inleft (exist _ (apply s ret_t, Map.map (apply s) (merge f_env x_env), S x_n) _)
-      | _ => inright _
-      end;
-    | _ => inright _ };
-  | inright _ := inright _ }.
-
-Next Obligation. split.
-split.
-apply wt_Var. apply singleton_MapsTo.
-
-intros. destruct t2. simpl in *.
-exists (sole_sub 0 t). split. easy.
-intros.
-apply singleton_MapsTo_one_thing in H0. destruct H0. rewrite H1.
-cbn. cbn in H. dependent destruction H. congruence.
-
-split; [ | intros; apply In_values_MapsTo_equiv in H; destruct H;
-           apply singleton_MapsTo_one_thing in H; destruct H; rewrite H0 ].
-
-compute; intros; dependent destruction H; easy.
-compute; intros; dependent destruction H1; easy.
-Qed.
+Program Definition lambda_case exp t env n x
+  (_ : most_general_type exp (t, env)) (_ : typing_nvars (t, env, n)) :
+  { t' | most_general_type (Lambda x exp) (fst t') /\ typing_nvars t'} :=
+  match Map.find x env with
+  | Some argt => exist _ (argt '-> t, Map.remove x env, n) _
+  | None => exist _ (TVar n '-> t, env, (S n)) _
+  end.
 
 Next Obligation.
-destruct H.
-simpl in *.
-split.
-split.
-apply wt_Lambda. apply (well_typed_proper b t env). simpl.
-unfold Map.Equal. intro. destruct (string_dec x y).
-  rewrite MF.add_eq_o. give_up. assumption.
-  rewrite MF.add_neq_o. rewrite MF.remove_neq_o. reflexivity. assumption. assumption.
-assumption.
+  destruct H.
+  smash. split.
 
-intros.
-destruct t2. simpl in *. dependent destruction H3.
-pose proof (H2 (returnt, Map.add x argt0 env0) H3). simpl in H4.
-destruct H4. destruct H4.
-exists x0. split.
-  rewrite H4. specialize H5 with x argt. give_up.
+  simpl.
+  apply wt_Lambda. apply (well_typed_proper _ t env).
+  unfold Map.Equal. intro. destruct (string_dec x y).
+  rewrite MF.add_eq_o; smash.
+  rewrite MF.add_neq_o. rewrite MF.remove_neq_o; smash. assumption.
+  assumption.
 
-  intros. destruct(string_dec x x1).
-    Reconstr.rcrush (@Infer.MF.remove_mapsto_iff) (@Infer.Env).
-    Reconstr.rcrush (@Map.add_3, @Map.remove_3) (@name, @Infer.Env, @Map.key).
+  smash.
+  destruct t2. simpl in *. dependent destruction H3.
+  pose proof (H2 (returnt, Map.add x argt0 env0) H3). simpl in H4.
+  destruct H4.
+  exists x0. smash.
+  rewrite H4. specialize H5 with x argt. apply MF.add_mapsto_iff in H5. smash.
+  apply Map.find_2. smash.
 
-split.
-unfold vars_below. intros. dependent destruction H2. dependent destruction H2.
-dependent destruction H2. apply H1 in H2. assumption.
-apply In_values_MapsTo_equiv. exists x. destruct H.  apply MF.find_mapsto_iff. auto. auto.
-intros. apply v0. apply In_values_MapsTo_equiv in H.
-destruct H. apply Map.remove_3 in H. apply In_values_MapsTo_equiv.
-exists x0. easy.
+  apply Map.find_1 in H6. rewrite MF.remove_o in H6.
+  destruct old_string_EQ.eq_dec; smash.
+  eapply Map.add_3.
+  apply n0. apply H5. apply Map.find_2. assumption.
+
+  apply variables_spec in H3. dependent destruction H3. dependent destruction H3.
+  dependent destruction H3. apply (H1 argt). apply In_values_MapsTo_equiv.
+  exists x. apply Map.find_2. auto. auto.
+  now apply H0.
+  apply (H1 t2). apply In_values_MapsTo_equiv. apply In_values_MapsTo_equiv in H3.
+  destruct H3.
+  apply Map.remove_3 in H3. exists x0. assumption.
+  apply variables_spec. assumption.
 Qed.
 
 Lemma map_add_order {V} : forall k k2 (v v2 : V) m,
@@ -397,97 +370,86 @@ apply IHb1; assumption.
 apply IHb2; assumption.
 Qed.
 
-Lemma vars_small : forall n s argt t,
-    vars_below n t ->
-    apply (fun x => if Nat.eq_dec x n then argt else s x) t = apply s t.
-induction t.
-cbn. intro.
-destruct Nat.eq_dec.
-rewrite e in H. compute in H. specialize H with n.
-pose proof Here. apply H in H0. omega.
-reflexivity.
+Next Obligation.
+  smash. split.
+  simpl. apply wt_Lambda.
+  apply extra_variable_harmless.
+  destruct H. easy. easy.
 
-cbn. reflexivity.
+  destruct H. smash. destruct t2. simpl in *.
+  dependent destruction H3.
+  destruct (H2 (returnt, (Map.add x argt env0))). easy.
+  simpl in H4.
+  exists (augment_sub x0 n argt).
+  smash.
+  rewrite augment_sub_hlp.
+  unfold augment_sub. destruct Nat.eq_dec; smash.
+  intro. apply variables_spec in H6. apply H0 in H6. smash.
 
-cbn. intro.
-unfold vars_below in H.
-rewrite IHt1.
-rewrite IHt2.
-reflexivity.
-all: unfold vars_below; auto.
+  rewrite augment_sub_hlp.
+  eapply Map.add_3.
+  intro. rewrite <- H7 in H6. apply Map.find_1 in H6.
+  rewrite H6 in Heq_anonymous. congruence.
+  apply H5; smash.
+  intro. specialize H1 with a. rewrite In_values_MapsTo_equiv in H1.
+  apply variables_spec in H7. apply H1 in H7; smash.
+  exists x1; smash.
+
+  apply variables_spec in H2.
+  dependent destruction H2.
+  dependent destruction H2.
+  dependent destruction H2.
+  dependent destruction H2; smash.
+  apply Nat.lt_lt_succ_r. now apply H0.
+
+  apply Nat.lt_lt_succ_r. apply variables_spec in H3. apply (H1 t2); auto.
+Qed.
+
+Equations infer (exp : expression) :
+  { t | most_general_type exp (fst t) /\ typing_nvars t} +
+  { forall t env, ~ well_typed exp t env } :=
+
+infer (Var a) := inleft (exist _ (TVar 0, (singleton a (TVar 0)), 1) _);
+
+infer (Lambda x b) with infer b => {
+  | inleft (exist _ (t, env, n) _) => inleft (lambda_case b t env n _ _ _);
+  | inright _ := inright _ };
+
+infer (Call f x) with infer f => {
+  | inleft (exist _ (f_t, f_env, f_n) _) with infer x => {
+    | inleft (exist _ (x_t_, x_env_, x_n_) _) :=
+      let x_t := add_to_tvars f_n x_t_ in
+      let x_env := Map.map (add_to_tvars f_n) x_env_ in
+      let x_n := x_n_ + f_n in
+      let ret_t := TVar x_n in
+      match unify_typings (f_t, f_env) (x_t '-> ret_t, x_env) with
+      | inleft _ (exist _ s _) =>
+        inleft (exist _ (apply s ret_t, Map.map (apply s) (merge f_env x_env), S x_n) _)
+      | _ => inright _
+      end;
+    | _ => inright _ };
+  | inright _ := inright _ }.
+
+Next Obligation.
+  smash.
+  split.
+  apply wt_Var. apply singleton_MapsTo.
+
+  intros. destruct t2. simpl in *.
+  exists (sole_sub 0 t). smash.
+  apply singleton_MapsTo_one_thing in H0. smash. rewrite H1.
+  cbn. dependent destruction H. congruence.
+
+  destruct H; smash. destruct H.
+
+  apply In_values_MapsTo_equiv in H. destruct H. apply singleton_MapsTo_one_thing in H.
+  smash. rewrite H1 in H0. destruct H0; smash. destruct H0.
 Qed.
 
 Next Obligation.
-split.
-unfold most_general_type.
-destruct m. simpl in *.
-split.
-apply wt_Lambda.
-apply extra_variable_harmless; easy.
-
-intros.
-dependent destruction H.
-destruct t2. simpl in *. destruct x.
-pose proof (e (returnt, Map.add x0 argt e0) H). 
-destruct H0. simpl in H0. destruct H0.
-
-exists (fun v => if Nat.eq_dec v n then argt else x v). split.
-
-rewrite vars_small.
-destruct Nat.eq_dec; congruence.
-assumption.
-
-intros.
-rewrite vars_small.  
-destruct (string_dec x1 x0).
-apply Map.find_1 in H2. congruence.
-rcrush (@Map.add_3) (@Map.key, @Infer.Env, @name).
-apply v0. apply In_values_MapsTo_equiv. eauto.
-
-split.
-unfold vars_below.
-intros.
-dependent destruction H.
-dependent destruction H.
-dependent destruction H.
-dependent destruction H.
-omega.
-assert (S v1 <= n).
-apply v. assumption.
-omega.
-
-intros.
-assert (vars_below n t2).
-apply v0. assumption.
-compute.
-intros.
-assert (S v1 <= n).
-apply H0. assumption.
-omega.
+  intro. dependent destruction H.
+  now apply wildcard0 in H.
 Qed.
-
-Next Obligation.
-scrush.
-Qed.
-
-Next Obligation.
-simpl. pose proof (esize_is_nonzero x). omega.
-Qed.
-
-Next Obligation.
-simpl. pose proof (esize_is_nonzero f). omega.
-Qed.
-
-Next Obligation.
-destruct m0.
-destruct m.
-simpl in *.
-
-split.
-split.
-simpl.
-apply (wt_Call _ _ (add_to_tvars f_n x_t_)).
-Admitted.
 
 Next Obligation.
 Admitted.
@@ -496,4 +458,9 @@ Next Obligation.
 Admitted.
 
 Next Obligation.
-Admitted.
+  intro. dependent destruction H2. now apply n0 in H2_0.
+Qed.
+
+Next Obligation.
+  intro. dependent destruction H. now apply wildcard2 in H.
+Qed.

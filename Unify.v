@@ -262,15 +262,15 @@ Qed.
 
 Notation minimal_MGU s a b := (unifies s a b /\ isMGU s a b /\ idempotent s).
 
-Definition limit_sub s v a :=
-  if Nat.eq_dec a v then
-    TVar a
+Definition augment_sub s k (v : Tipe) a :=
+  if Nat.eq_dec a k then
+    v
   else
     s a.
 
-Lemma limit_sub_hlp s v x : ¬ v ∈ variables x -> apply (limit_sub s v) x = apply s x.
+Lemma augment_sub_hlp s k v x : ¬ k ∈ variables x -> apply (augment_sub s k v) x = apply s x.
   induction x.
-  intros. cbn. unfold limit_sub. destruct Nat.eq_dec. rewrite e in H. destruct H.
+  intros. cbn. unfold augment_sub. destruct Nat.eq_dec. rewrite e in H. destruct H.
   cbn. auto.
   easy.
   smash.
@@ -292,12 +292,12 @@ Lemma no_unnecessary_mappings s a b :
   destruct (Nat.eq_dec t v). congruence.
 
   unfold idempotent in H1. specialize H1 with (TVar v). cbn in H1. rewrite Heqt in H1. cbn in H1.
-  destruct (H0 (limit_sub s v)).
-  unfold unifies. now repeat rewrite limit_sub_hlp.
+  destruct (H0 (augment_sub s v (TVar v))).
+  unfold unifies. now repeat rewrite augment_sub_hlp.
 
   pose proof H5 (TVar v).
   pose proof H5 (TVar t).
-  unfold limit_sub in *.
+  unfold augment_sub in *.
   cbn in *.
   destruct Nat.eq_dec.
   destruct Nat.eq_dec. contradiction.
