@@ -181,17 +181,6 @@ Lemma variables_spec : forall a x, TVar a <= x <-> a ∈ variables x.
   apply set_union_elim in H; destruct H; auto.
 Qed.
 
-Lemma in_variables_dec : forall a x, {a ∈ variables x} + {~ a ∈ variables x}.
-  intros. destruct (contains_dec (TVar a) x).
-  apply variables_spec in c; auto.
-  right. intro. apply n; apply variables_spec; auto.
-Qed.
-
-Lemma sole_sub_does_nothing2 : forall a t,
-    ~ a ∈ variables t -> forall x, apply (sole_sub a x) t = t.
-  intros; apply sole_sub_does_nothing; now rewrite variables_spec.
-Qed.
-
 Lemma sole_sub_does_nothing3 : forall a b,
     ~ a = b -> forall x, apply (sole_sub a x) (TVar b) = TVar b.
   intros. unfold sole_sub. cbn.
@@ -209,51 +198,63 @@ Ltac canonicalize_unify :=
   try intro;
   unfold unifies in *;
 
-  try rewrite sole_sub_works;
+  try rewrite sole_sub_works in *;
   try rewrite in_to_set_in in *;
   try match goal with
-      | [ |- context[apply identity]] => rewrite identity_does_nothing
-      | [ |- context[sequence _ _]] => rewrite sequence_application
-      | [ |- set_In _ (_ ∪ _)] => apply set_union_intro
-      | [ H : set_In _ (_ ∪ _) |- _] => apply set_union_elim in H
-      | [ H : ~ ?a ∈ variables ?x |- context[apply (sole_sub ?a _) ?x]] => rewrite (sole_sub_does_nothing2 _ _ H)
-      | [ H : ~ ?a = ?b |- context[apply (sole_sub ?a _) (TVar ?b)]] => rewrite (sole_sub_does_nothing3 _ _ H)
-      | [ H : context[TVar ?a <= ?t] |- _ ] => rewrite variables_spec in H
-      | [ |- _ /\ _] => split
-      | [ H : _ /\ _ |- _ ] => destruct H
-      | [ H : _ \/ _ |- _ ] => destruct H
-      | [ H : _ ∈ (_ ∪ _) |- _] => destruct H
+      | |- context[apply _ (TApp _ _)] => rewrite apply_goes_into_tapp
+      | H : context[apply _ (TApp _ _)] |- _ => rewrite apply_goes_into_tapp in H
+      | |- context[apply identity] => rewrite identity_does_nothing
+      | H : context[apply identity] |- _ => rewrite identity_does_nothing in H
+      | |- context[sequence _ _] => rewrite sequence_application
+      | H : context[sequence _ _] |- _ => rewrite sequence_application in H
+      | |- set_In _ (_ ∪ _) => apply set_union_intro
+      | H : set_In _ (_ ∪ _) |- _ => apply set_union_elim in H
+      | H : ¬ TVar ?a <= ?x |- context[apply (sole_sub ?a _) ?x] =>
+        rewrite (sole_sub_does_nothing _ _ _ H)
+      | H : ¬ TVar ?a <= ?x, H2 : context[apply (sole_sub ?a _) ?x] |- _ =>
+        rewrite (sole_sub_does_nothing _ _ _ H) in H2
+      | H : ~ ?a = ?b |- context[apply (sole_sub ?a _) (TVar ?b)] => rewrite (sole_sub_does_nothing3 _ _ H)
+      | |- _ /\ _ => split
+      | H : _ /\ _ |- _ => destruct H
+      | H : _ \/ _ |- _ => destruct H
+      | H : _ ∈ (_ ∪ _) |- _ => destruct H
   end.
+
+Ltac head t :=
+  match t with
+  | ?t' _ => head t'
+  | _ => t
+  end.
+
+Ltac head_constructor t :=
+  let t' := head t in is_constructor t'.
 
 Ltac smasher canonicalize :=
   repeat (canonicalize);
+
+  try eauto;
   try congruence;
-  try auto with sets;
   try lia;
+
   try match goal with
-        [ |- _ \/ _] =>
+      | |- _ \/ _ =>
         first [(solve [left; smasher canonicalize])
               | (solve [right; smasher canonicalize])]
+      | H : _ <= ?rhs |- _ =>
+        head_constructor rhs;
+        solve [dependent destruction H; smasher canonicalize]
       end.
 
 Local Ltac smash := smasher canonicalize_unify.
 
 Definition idempotent s := forall x, apply s (apply s x) = apply s x.
 
-Lemma sole_sub_idempotent : forall a x, ~ a ∈ variables x -> idempotent (sole_sub a x).
+Lemma sole_sub_idempotent : forall a x, ~ TVar a <= x -> idempotent (sole_sub a x).
   intros. unfold idempotent.
   induction x0; smash.
 
-  destruct (Nat.eq_dec a t).
-  destruct e. smash.
-
-  assert (¬ a ∈ variables (TVar t)). intro. destruct H0. congruence.
+  destruct (Nat.eq_dec a t). destruct e. smash.
   smash.
-
-  smash.
-
-  simpl.
-  congruence.
 Qed.
 
 (** MGUs can contain unnecessary cycles. An idempotent MGU won't.
@@ -268,20 +269,19 @@ Definition augment_sub s k (v : Tipe) a :=
   else
     s a.
 
-Lemma augment_sub_hlp s k v x : ¬ k ∈ variables x -> apply (augment_sub s k v) x = apply s x.
-  induction x.
-  intros. cbn. unfold augment_sub. destruct Nat.eq_dec. rewrite e in H. destruct H.
-  cbn. auto.
+Lemma augment_sub_hlp s k v x : ¬ TVar k <= x -> apply (augment_sub s k v) x = apply s x.
+  induction x; smash.
+  unfold augment_sub. simpl. destruct Nat.eq_dec. destruct H. rewrite e. smash.
   easy.
-  smash.
-  intro. cbn.
+
+  cbn.
   rewrite IHx1. rewrite IHx2. reflexivity.
-  all: simpl in H; intro; destruct H; apply set_union_intro; smash.
+  all: smash.
 Qed.
 
 Lemma no_unnecessary_mappings s a b :
   minimal_MGU s a b ->
-  forall v, ~ v ∈ variables a -> ~ v ∈ variables b -> s v = TVar v.
+  forall v, ~ TVar v <= a -> ~ TVar v <= b -> s v = TVar v.
   smash.
   assert (forall t, exists d, forall x, apply s (apply (sole_sub v t) x) = apply d (apply s x)).
   intro. destruct (H0 (sequence s (sole_sub v t))).
@@ -304,57 +304,52 @@ Lemma no_unnecessary_mappings s a b :
   congruence. contradiction.
 
   destruct (H4 (TApp (TConst "") (TConst "")));
-    specialize H5 with (TVar v); rewrite sole_sub_works in H5; cbn in H5; rewrite Heqt in H5; cbn in H5; congruence.
+    specialize H5 with (TVar v); smash; cbn in H5; rewrite Heqt in H5; cbn in H5; smash.
 
   destruct (H4 (TConst ""));
-  specialize H5 with (TVar v); rewrite sole_sub_works in H5; cbn in H5; rewrite Heqt in H5; cbn in H5; congruence.
+    specialize H5 with (TVar v); smash; cbn in H5; rewrite Heqt in H5; cbn in H5; smash.
 Qed.
 
-Lemma hlp s x : apply s x = x -> forall a, a ∈ variables x -> s a = TVar a.
-  induction x; intros. simpl in H0. destruct H0. destruct H0. auto. easy.
-  easy.
-  cbn in H0. apply set_union_elim in H0.
-  cbn in H. injection H.
-  smash.
+Lemma hlp s x : apply s x = x -> forall a, TVar a <= x -> s a = TVar a.
+  induction x; smash.
+  simpl in H. injection H. smash.
 Qed.
 
 Lemma no_new_variables s a b :
   minimal_MGU s a b ->
-  forall x, variables (apply s x) ⊆ (variables a ∪ variables b ∪ variables x).
-  intros. intro. intro.
-  destruct (in_variables_dec a0 a); smash.
-  destruct (in_variables_dec a0 b); smash.
-  destruct (in_variables_dec a0 x); smash.
+  forall x v, TVar v <= apply s x -> TVar v <= a \/ TVar v <= b \/ TVar v <= x.
+  intros.
+  destruct (contains_dec (TVar v) a); smash.
+  destruct (contains_dec (TVar v) b); smash.
+  destruct (contains_dec (TVar v) x); smash.
   exfalso.
 
-  destruct (H1 (sequence s (sole_sub a0 (TConst "")))); smash.
+  destruct (H1 (sequence s (sole_sub v (TConst "")))); smash.
 
-  pose proof H3 (TVar a0).
-  rewrite sequence_application in H4. rewrite sole_sub_works in H4. cbn in H4.
-  rewrite (no_unnecessary_mappings s a b) in H4. cbn in H4.
+  pose proof H3 (TVar v).
+  smash. cbn in H4.
+  rewrite (no_unnecessary_mappings s a b) in H4; smash. cbn in H4.
   pose proof H3 x.
-  rewrite sequence_application in H5. rewrite sole_sub_does_nothing2 in H5.
-  apply eq_sym in H5. pose proof hlp _ _ H5 a0 H0.
+  smash.
+  apply eq_sym in H5. pose proof hlp _ _ H5 v H0.
   congruence.
-  all: easy.
 Qed.
 
 Lemma idempotent_removes_from_all s :
   idempotent s ->
-  forall a x, a ∈ variables x -> ~ a ∈ variables (apply s x) ->
-  forall t, ~ a ∈ variables (apply s t).
+  forall a x, TVar a <= x -> ~ TVar a <= apply s x ->
+  forall t, ~ TVar a <= apply s t.
   smash.
   apply (hlp s) in H2; smash.
   apply H1.
-  apply variables_spec.
   rewrite <- H2.
   assert (s a = apply s (TVar a)). smash.
   rewrite H3.
   apply map_containment.
-  apply variables_spec. assumption.
+  smash.
 Qed.
 
-Lemma idempotent_occurs s : idempotent s -> forall t, t ∈ variables (s t) -> s t = TVar t.
+Lemma idempotent_occurs s : idempotent s -> forall t, TVar t <= s t -> s t = TVar t.
   intros.
   apply (hlp _ _ (H (TVar t))).
   smash.
@@ -362,25 +357,27 @@ Qed.
 
 Lemma misses_var_dec s x :
   idempotent s ->
-  {exists v, v ∈ variables x /\ ~ v ∈ variables (apply s x)} + {apply s x = x}.
+  {exists v, TVar v <= x /\ ~ TVar v <= apply s x} + {apply s x = x}.
   intro.
-  induction x.
-  destruct (in_variables_dec t (s t)).
-  right. cbn. apply idempotent_occurs; smash.
-  left. simpl. exists t; smash.
+  induction x; simpl.
+
+  destruct (contains_dec (TVar t) (s t)).
+  right. apply idempotent_occurs; smash.
+  left. exists t; smash.
 
   smash.
 
-  simpl.
   destruct IHx1.
   left. destruct e.
   exists x. smash.
-  pose proof idempotent_removes_from_all _ H _ _ H0 H2. now apply H3 in H1.
+  dependent destruction H1;
+    eapply (idempotent_removes_from_all _ H _ _ H0 H2); smash.
 
   destruct IHx2.
   left. destruct e0.
   exists x. smash.
-  pose proof idempotent_removes_from_all _ H _ _ H0 H2. now apply H3 in H1.
+  dependent destruction H1;
+    eapply (idempotent_removes_from_all _ H _ _ H0 H2); smash.
 
   right; smash.
 Qed.
@@ -434,7 +431,7 @@ Definition reverse_bind : forall a b,
     -> { s | minimal_MGU s b a } +
        { forall s, ~ unifies s b a }.
   intros. destruct H.
-  left. destruct s. smash. exists x. smash.
+  left. destruct s. smash.
   right; smash.
 Defined.
 
@@ -527,21 +524,9 @@ Next Obligation.
   assumption.
 Qed.
 
-Ltac listset_brute :=
-    try assumption;
-    apply set_union_intro;
-    try solve [left; listset_brute];
-    try solve [right; listset_brute].
-
 Ltac less_size_auto :=
   apply less_size;
-  [ apply NoDup_incl_length;
-   [ smash
-   | unfold incl; intros;
-     match goal with [H : List.In _ _ |- _] =>
-                     apply set_union_elim in H;
-                     destruct H; listset_brute
-     end]
+  [ apply NoDup_incl_length; repeat (smash; simpl)
   | simpl;
     match goal with
     | [|- _ < size ?x + size ?y ] =>
@@ -561,7 +546,7 @@ Qed.
 
 Next Obligation.
   smash.
-  cbn. now rewrite u.
+  cbn. smash.
   destruct (i s').
   cbn in H; smash.
   exists x; smash.
@@ -569,13 +554,12 @@ Qed.
 
 Next Obligation.
   smash.
-  injection H; smash.
 Qed.
 
 
 Lemma progress_proof_help s a1 a2 b1 b2 :
   minimal_MGU s a1 b1 ->
-  (∃ v : tvarname, v ∈ variables a2 ∧ ¬ v ∈ variables (apply s a2)) ->
+  (∃ v : tvarname, TVar v <= a2 ∧ ¬ TVar v <= apply s a2) ->
   length
     (variables (apply s a2) ∪ variables (apply s b2)) <
   length
@@ -593,32 +577,32 @@ Lemma progress_proof_help s a1 a2 b1 b2 :
   eapply NoDup_length_incl in e.
   pose proof (e x).
   apply set_union_elim in H4; smash.
+  rewrite <- variables_spec in H4. smash.
+  rewrite <- variables_spec in H4.
+  exfalso. eapply idempotent_removes_from_all. apply H3. apply H0. easy. eauto.
 
-  destruct (in_variables_dec x (apply s a2)); smash.
-  exfalso. eapply idempotent_removes_from_all. apply H3. apply H0. easy.
-  eauto.
-  simpl. smash.
+  simpl in *. rewrite variables_spec in H0. smash.
   smash.
 
   pose proof no_new_variables s a1 b1.
-  unfold incl in H4.
+  unfold incl.
   smash.
   specialize H4 with a2 a.
-  simpl.
-  apply set_union_elim in H4; smash.
+  repeat rewrite <- variables_spec in *.
+  destruct H4; smash.
 
-  specialize H4 with b2 a. simpl. apply set_union_elim in H4. smash.
-
-  smash.
-  smash.
+  specialize H4 with b2 a.
+  repeat rewrite <- variables_spec in *.
+  destruct H4; smash.
 
   assert (forall a b, ~ a = b -> a ≤ b -> a < b). smash.
   apply H4; smash.
   apply NoDup_incl_length; smash.
-  apply (no_new_variables s a1 b1) in H5. smash.
-  smash.
-  apply (no_new_variables s a1 b1) in H5. smash.
-  smash.
+
+  all: rewrite <- variables_spec in H5;
+    apply (no_new_variables s a1 b1) in H5;
+    repeat rewrite variables_spec in H5;
+    smash.
 Qed.
 
 Lemma set_union_sym a b : NoDup a -> NoDup b -> length (a ∪ b) = length (b ∪ a).
@@ -655,23 +639,23 @@ Next Obligation.
   exists x0; smash.
 
   pose proof no_new_variables s2 (apply s1 a2) (apply s1 b2).
-  specialize H0 with (apply s1 x).
 
   destruct (misses_var_dec s1 (apply s2 (apply s1 x))); smash.
   exfalso. destruct e. smash.
   pose proof idempotent_removes_from_all _ i2 _ _ H1 H2.
-  unfold incl in H0. specialize H0 with x0. apply set_union_elim in H0; smash.
-  all: apply H3 in H0; easy.
+  specialize H0 with (apply s1 x) x0. destruct H0. smash. smash.
+  eapply H3; smash.
+  destruct H0; eapply H3; smash.
 Qed.
 
 Next Obligation.
   smash.
-  simpl in H0. injection H0. intros.
-  destruct (i s); smash.
+  destruct (i s);
+    injection H0; smash.
 Qed.
 
 Next Obligation.
-  smash. simpl in H. injection H. smash.
+  smash.
 Qed.
 
 Ltac stupid :=
