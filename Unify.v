@@ -1,7 +1,7 @@
 From Coq Require Import Init.Prelude Unicode.Utf8.
 From Coq Require Import String Arith.
 Open Scope string_scope.
-From Coq Require Import Program Omega List.
+From Coq Require Import Program Lia List.
 From Coq Require Import RelationClasses.
 
 Definition name := string.
@@ -102,28 +102,28 @@ match x with
 end.
 
 Lemma size_is_nonzero : forall x, 0 < size x.
-  induction x; cbn; omega.
+  induction x; cbn; lia.
 Qed.
 
 Lemma containment_to_size : forall a b,
     a <= b -> (size a <= size b)%nat.
   induction b; intro; dependent destruction H; auto.
-  apply IHb1 in H; cbn; omega.
-  apply IHb2 in H; cbn; omega.
+  apply IHb1 in H; cbn; lia.
+  apply IHb2 in H; cbn; lia.
 Qed.
 
 Theorem bad_recursion_left : forall a b, ~ TApp a b <= a.
   intuition.
   apply containment_to_size in H; cbn in H.
   pose proof size_is_nonzero b.
-  omega.
+  lia.
 Qed.
 
 Theorem bad_recursion_right : forall a b, ~ TApp a b <= b.
   intuition.
   apply containment_to_size in H; cbn in H.
   pose proof size_is_nonzero a.
-  omega.
+  lia.
 Qed.
 
 Theorem sole_sub_does_nothing : forall a t t2,
@@ -215,7 +215,7 @@ Ltac canonicalize_unify :=
       | [ |- context[apply identity]] => rewrite identity_does_nothing
       | [ |- context[sequence _ _]] => rewrite sequence_application
       | [ |- set_In _ (_ ∪ _)] => apply set_union_intro
-                                        | [ H : set_In _ (_ ∪ _) |- _] => apply set_union_elim in H
+      | [ H : set_In _ (_ ∪ _) |- _] => apply set_union_elim in H
       | [ H : ~ ?a ∈ variables ?x |- context[apply (sole_sub ?a _) ?x]] => rewrite (sole_sub_does_nothing2 _ _ H)
       | [ H : ~ ?a = ?b |- context[apply (sole_sub ?a _) (TVar ?b)]] => rewrite (sole_sub_does_nothing3 _ _ H)
       | [ H : context[TVar ?a <= ?t] |- _ ] => rewrite variables_spec in H
@@ -229,7 +229,7 @@ Ltac smasher canonicalize :=
   repeat (canonicalize);
   try congruence;
   try auto with sets;
-  try omega;
+  try lia;
   try match goal with
         [ |- _ \/ _] =>
         first [(solve [left; smasher canonicalize])
@@ -456,8 +456,7 @@ Lemma less_vars_or_size_acc vars : forall size, Acc less_vars_or_size (vars, siz
   apply le_n_0_eq in H. destruct H.
   destruct (Nat.eq_dec n0 size0). smash.
   eapply Acc_inv. apply IHsize0.
-  apply less_size. smash.
-  omega.
+  apply less_size; smash.
 
   induction size0.
   apply Acc_intro. destruct y; intro; dependent destruction H.
@@ -465,7 +464,7 @@ Lemma less_vars_or_size_acc vars : forall size, Acc less_vars_or_size (vars, siz
   rewrite e; easy.
   eapply Acc_inv.
   apply (IHvars 0).
-  apply less_vars. omega.
+  apply less_vars; smash.
 
   easy.
 
@@ -477,12 +476,12 @@ Lemma less_vars_or_size_acc vars : forall size, Acc less_vars_or_size (vars, siz
   destruct (Nat.eq_dec n0 size0). smash.
   eapply Acc_inv.
   apply IHsize0.
-  apply less_size. auto. omega.
+  apply less_size; smash.
 
   destruct (Nat.eq_dec n vars). rewrite e. auto.
   eapply Acc_inv.
   apply (IHvars 0).
-  apply less_vars. omega.
+  apply less_vars; smash.
 Defined.
 
 Lemma less_vars_or_size_wf : well_founded less_vars_or_size.
@@ -549,7 +548,7 @@ Ltac less_size_auto :=
       pose proof size_is_nonzero x;
       pose proof size_is_nonzero y
     end;
-    omega
+    smash
   ].
 
 Next Obligation.
@@ -613,7 +612,7 @@ Lemma progress_proof_help s a1 a2 b1 b2 :
   smash.
   smash.
 
-  assert (forall a b, ~ a = b -> a ≤ b -> a < b). intros. omega.
+  assert (forall a b, ~ a = b -> a ≤ b -> a < b). smash.
   apply H4; smash.
   apply NoDup_incl_length; smash.
   apply (no_new_variables s a1 b1) in H5. smash.
@@ -626,10 +625,8 @@ Lemma set_union_sym a b : NoDup a -> NoDup b -> length (a ∪ b) = length (b ∪
   intros.
   assert ((a ∪ b) ⊆ (b ∪ a)). smash.
   assert ((b ∪ a) ⊆ (a ∪ b)). smash.
-  apply NoDup_incl_length in H1.
-  apply NoDup_incl_length in H2.
-  omega.
-  smash. smash.
+  apply NoDup_incl_length in H1; smash.
+  apply NoDup_incl_length in H2; smash.
 Qed.
 
 Next Obligation.
